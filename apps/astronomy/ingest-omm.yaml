@@ -7,8 +7,7 @@ spec:
   image: astronomy-api:local
   command: ["dotnet", "Astronomy.DataIngestion.dll", "omm", "refresh"]
   envFrom:
-    - secret:
-        name: astronomy-db-creds
+    - secret: astronomy-db-creds
   filesFrom:
     - persistentVolumeClaim: astronomy-data
       mountPath: /data

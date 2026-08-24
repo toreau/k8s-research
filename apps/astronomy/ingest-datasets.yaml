@@ -15,8 +15,7 @@ spec:
       dotnet Astronomy.DataIngestion.dll ingest star-catalog &&
       dotnet Astronomy.DataIngestion.dll dataset status
   envFrom:
-    - secret:
-        name: astronomy-db-creds
+    - secret: astronomy-db-creds
   filesFrom:
     - persistentVolumeClaim: astronomy-data
       mountPath: /data
