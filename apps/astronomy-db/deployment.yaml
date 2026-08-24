@@ -15,9 +15,10 @@ spec:
       labels:
         app: astronomy-db
     spec:
+      # Official postgres image entrypoint runs as root and drops to uid 999 (postgres)
+      # internally via gosu. Forcing runAsUser here breaks its chmod/chown on the data dir.
+      # fsGroup keeps the PVC group-writable for the postgres process.
       securityContext:
-        runAsUser: 999
-        runAsGroup: 999
         fsGroup: 999
       containers:
         - name: postgres
