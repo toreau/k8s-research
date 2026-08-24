@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Skiperator source clone — own repo, managed separately
+/skiperator/
+
+# Build artifacts
+bin/
+*.tgz
+
+# Istio download (make setup-local pulls it into the workspace)
+istio-*/
+
+# Local webhook cert temp dirs (make run-local / local-webhook)
+skiperator-webhook-certs*/
+
+# Editors
+.idea/
+.vscode/
