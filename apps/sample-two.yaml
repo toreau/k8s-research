@@ -6,6 +6,6 @@ metadata:
 spec:
   image: nginxinc/nginx-unprivileged
   port: 8080
-  replicas: 3
+  replicas: 2
   ingresses:
     - sample-two.172.21.255.200.nip.io
