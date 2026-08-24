@@ -14,11 +14,11 @@ spec:
     - persistentVolumeClaim: astronomy-data
       mountPath: /data
   readiness:
-    path: /ready
+    path: /health/ready
     port: 8080
     initialDelay: 5
   liveness:
-    path: /ready
+    path: /health/live
     port: 8080
     initialDelay: 20
     failureThreshold: 5
