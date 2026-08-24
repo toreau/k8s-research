@@ -4,7 +4,7 @@ metadata:
   name: sample-two
   namespace: sample
 spec:
-  image: nginxinc/nginx-unprivileged
+  image: nginxinc/nginx-unprivileged@sha256:197f252f060ed357f2ab98d4256762d7d107c76f18ad8f0b9d5178854611566d
   port: 8080
   replicas: 2
   ingresses:
