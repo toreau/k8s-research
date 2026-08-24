@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: istio-ingress-external-service-account
+  namespace: istio-gateways
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: istio-ingress-external
+  namespace: istio-gateways
+  annotations:
+    metallb.io/loadBalancerIPs: "172.21.255.200"
+  labels:
+    app: istio-ingress-external
+spec:
+  type: LoadBalancer
+  selector:
+    app: istio-ingress-external
+  ports:
+    - name: status-port
+      port: 15021
+      targetPort: 15021
+      protocol: TCP
+    - name: http2
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: 8443
+      protocol: TCP
+    - name: http-envoy-prom
+      port: 15090
+      targetPort: 15090
+      protocol: TCP

@@ -10,6 +10,7 @@ bin/
 
 # Istio download (make setup-local pulls it into the workspace)
 istio-*/
+!cluster/istio-gateways/
 
 # Local webhook cert temp dirs (make run-local / local-webhook)
 skiperator-webhook-certs*/
