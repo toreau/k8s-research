@@ -4,6 +4,10 @@ SHELL = bash
 SKIPERATOR_DIR := skiperator
 KIND_CLUSTER_NAME ?= skiperator
 KUBECTX := kind-$(KIND_CLUSTER_NAME)
+ASTRONOMY_DIR := $(HOME)/src/astronomy.aursand.no
+ASTRONOMY_IMAGE ?= ghcr.io/toreau/astronomy-api
+TESTAPP_IMAGE ?= ghcr.io/toreau/k8s-testapp
+GHCR_USER ?= toreau
 
 .PHONY: help
 help:
@@ -17,6 +21,8 @@ help:
 	@echo "  make status          show cluster + processes + ArgoCD app state"
 	@echo "  make cluster-delete  delete the kind cluster"
 	@echo "  make verify          print tool versions"
+	@echo "  make astronomy-image build+push arm64, merge multi-arch (CI pushes amd64) to GHCR"
+	@echo "  make testapp-image   build+push UID-150 testapp image to GHCR"
 
 .PHONY: cluster
 cluster:
@@ -81,3 +87,38 @@ verify:
 	@echo "argocd: $$(argocd version --client | head -1)"
 	@echo "docker: $$(docker info --format '{{.OperatingSystem}} {{.Architecture}} {{.NCPU}} CPUs / {{.MemTotal}}')"
 	@echo "kubectl:$$(kubectl version --client | head -1)"
+
+.PHONY: ghcr-login
+ghcr-login:
+	@gh auth token | docker login ghcr.io -u $(GHCR_USER) --password-stdin
+
+# Build+push the astronomy-api arm64 image locally (CI pushes amd64) and merge
+# both into the multi-arch :latest / :main-<sha> manifests on GHCR.
+.PHONY: astronomy-image
+astronomy-image:
+	@test -d $(ASTRONOMY_DIR) || { echo "clone first: gh repo clone toreau/astronomy.aursand.no $(ASTRONOMY_DIR)"; exit 1; }
+	@test "$$(git -C $(ASTRONOMY_DIR) rev-parse HEAD)" = "$$(git ls-remote https://github.com/toreau/astronomy.aursand.no.git main | cut -f1)" || { echo "local astronomy HEAD != origin/main; git pull in $(ASTRONOMY_DIR) first"; exit 1; }
+	$(MAKE) ghcr-login
+	@docker buildx create --name multi --driver docker-container --use >/dev/null 2>&1 || true
+	@SHA=$$(git -C $(ASTRONOMY_DIR) rev-parse HEAD); \
+	echo "building arm64 (SHA=$$SHA)..."; \
+	docker buildx build --platform linux/arm64 --push \
+		-t $(ASTRONOMY_IMAGE):arm64-$$SHA \
+		-f $(ASTRONOMY_DIR)/src/Astronomy.Api/Dockerfile $(ASTRONOMY_DIR); \
+	echo "merging multi-arch manifest (amd64 from CI + arm64 local)..."; \
+	docker buildx imagetools create \
+		-t $(ASTRONOMY_IMAGE):latest \
+		-t $(ASTRONOMY_IMAGE):main-$$SHA \
+		$(ASTRONOMY_IMAGE):main-$$SHA \
+		$(ASTRONOMY_IMAGE):arm64-$$SHA
+
+# Build+push the UID-150 testapp image to GHCR.
+.PHONY: testapp-image
+testapp-image:
+	$(MAKE) ghcr-login
+	@docker buildx create --name multi --driver docker-container --use >/dev/null 2>&1 || true
+	@SHA=$$(git -C . rev-parse HEAD); \
+	docker buildx build --platform linux/arm64 --push \
+		-t $(TESTAPP_IMAGE):main-$$SHA \
+		-t $(TESTAPP_IMAGE):latest \
+		-f testapp/Dockerfile testapp
