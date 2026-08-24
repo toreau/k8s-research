@@ -6,6 +6,10 @@ metadata:
 spec:
   image: k8s-testapp:latest
   port: 8080
+  resources:
+    requests:
+      cpu: 25m
+      memory: 128Mi
   replicas:
     min: 2
     max: 4
