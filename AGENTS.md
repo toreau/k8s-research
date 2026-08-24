@@ -71,6 +71,13 @@ make verify           # print tool versions
   `argocd-server` 8081→80 and `istio-ingress-external` 8443→443. ArgoCD admin pw: `/tmp/argocd-admin.txt`.
 - **ArgoCD** 10.4.0 via helm; root Application `argocd/k8s-apps.yaml` syncs `apps/` (auto-sync +
   self-heal); manages the Skiperator CRs, not the operator-generated Deployment.
+- **Locally built images (Phase 5)**: `skiperator-config` has `enableLocallyBuiltImages: true`
+  (set in the clone's `config/skiperator-config.yaml`). Skiperator then skips image→digest resolution
+  and sets `imagePullPolicy: Never` for ALL apps — so every app image must be pre-loaded into the node
+  (`kind load docker-image`) and registry images referenced by digest. HPA needs a CPU `request` on the
+  Application (`resources.requests.cpu`) or it reports "missing request for cpu".
+- **UID-150 test app**: `testapp/` (Go, `USER 150`) → `k8s-testapp:latest`; Routing demo:
+  `apps/routing.yaml` routes `/`→sample-two and `/api`→hello on `routing.172.21.255.200.nip.io`.
 
 ## Conventions
 

@@ -21,7 +21,21 @@ cluster/   Platform manifests applied directly (kind config, MetalLB, cert-manag
 - [x] Phase 2 — `make run-operator` (host binary) + sample Application
 - [x] Phase 3 — MetalLB + nip.io + ClusterIssuer (HTTPS end-to-end)
 - [x] Phase 4 — ArgoCD + local git (git daemon) GitOps loop
-- [ ] Phase 5 — polish (local registry, Routing/SKIPJob demos, k9s)
+- [x] Phase 5 — polish (UID-150 test app, Routing demo, cron SKIPJob, HPA, k9s, Makefile helpers)
+
+## Phase 5 notes (verified)
+
+- **UID-150 test app** (`testapp/`, Go, `USER 150`): built → `kind load docker-image k8s-testapp:latest`;
+  `apps/hello.yaml` (HPA min2/max4 @cpu50) runs 2/2 with **real HPA targets** (`kubectl get hpa hello`).
+- **Routing demo**: `apps/routing.yaml` (`routing.172.21.255.200.nip.io`) → `/` serves sample-two (nginx),
+  `/api` serves hello (rewriteUri) — both HTTPS with the local CA. Cert secret re-copied into `sample`.
+- **Cron SKIPJob**: `apps/skipjob-cron.yaml` → CronJob `sample-job-cron` (suspended via GitOps).
+- **`enableLocallyBuiltImages: true`** added to `skiperator-config` (clone's `config/skiperator-config.yaml`)
+  so Skiperator skips image→digest resolution for locally-built images. **Side effect: `imagePullPolicy: Never`
+  for ALL apps** → every app image must be pre-loaded into the node (`kind load`); registry images must be
+  **digest-pinned** in the manifest (sample-two now references its digest).
+- **Makefile helpers**: `make operator/operator-stop`, `serve-git/git-stop`, `pf/pf-stop`, `status`.
+- **k9s** 0.51.0 installed.
 
 ## Phase 4 notes (verified)
 
