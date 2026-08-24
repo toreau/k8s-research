@@ -38,7 +38,24 @@ make verify           # print tool versions
 - **ClusterIssuer**: ingress hostnames get cert-manager certs — a ClusterIssuer
   must exist (self-signed CA for local; name aligned with `config/skiperator-config.yaml`).
 - **LoadBalancer**: kind has none — MetalLB provides IPs (Phase 3); use `*.nip.io`
-  hostnames.
+  hostnames. External gateway svc `istio-ingress-external` pinned to `172.21.255.200`.
+- **External ingress gateway (Phase 3)**: Skiperator's ingress Gateways select
+  `app: istio-ingress-external` in `istio-gateways` — that workload must be provisioned
+  (see `cluster/istio-gateways/`). It needs `ISTIO_META_CLUSTER_ID=Kubernetes` and a
+  ClusterRoleBinding letting its SA read secrets, or istiod refuses to serve app certs
+  ("attempted to access unauthorized certificates").
+- **App cert secrets**: Skiperator creates certs in `istio-gateways`; the per-app Gateway's
+  `credentialName` resolves in the app namespace → copy the TLS secret (tls.crt/tls.key/ca.crt)
+  into the app namespace after each reconcile.
+- **Docker Desktop routing**: the host CANNOT reach the kind bridge subnet (172.21.0.0/16).
+  Use `kubectl port-forward -n istio-gateways svc/istio-ingress-external 8443:443` and
+  `curl --cacert ... --connect-to host:443:127.0.0.1:8443`.
+- **HTTPS testing**: SNI comes from the URL hostname, not the `Host:` header — use
+  `--resolve`/`--connect-to`, else envoy resets (no filter chain for the IP SNI).
+- **metrics-server**: needs `--kubelet-insecure-tls --cert-dir=/tmp --secure-port=10250`
+  (probes hit the named port `https`=10250; read-only root FS needs `--cert-dir=/tmp`).
+- **sample-two port quirk**: upstream sample declares port 80, but nginx-unprivileged listens
+  on 8080 — local copy uses `port: 8080`.
 - **Local-only git for ArgoCD**: kind reaches the host via `host.docker.internal`;
   serve the repo with `git daemon` on `127.0.0.1:9418` (unauthenticated — loopback only).
 - The Skiperator clone lives at `./skiperator` and is git-ignored (own repo).
