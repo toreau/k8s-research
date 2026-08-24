@@ -15,6 +15,9 @@ istio-*/
 # Local webhook cert temp dirs (make run-local / local-webhook)
 skiperator-webhook-certs*/
 
+# Astronomy demo local secrets (never commit)
+.env.astronomy
+
 # Editors
 .idea/
 .vscode/
