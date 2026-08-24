@@ -1,0 +1,26 @@
+apiVersion: skiperator.kartverket.no/v1beta1
+kind: SKIPJob
+metadata:
+  name: ingest-datasets
+  namespace: astronomy
+spec:
+  image: astronomy-api:local
+  command:
+    - /bin/sh
+    - -c
+    - >-
+      dotnet Astronomy.DataIngestion.dll ingest eop &&
+      dotnet Astronomy.DataIngestion.dll ingest eop-c04 &&
+      dotnet Astronomy.DataIngestion.dll ingest leap-seconds &&
+      dotnet Astronomy.DataIngestion.dll ingest star-catalog &&
+      dotnet Astronomy.DataIngestion.dll dataset status
+  envFrom:
+    - secret:
+        name: astronomy-db-creds
+  filesFrom:
+    - persistentVolumeClaim: astronomy-data
+      mountPath: /data
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
