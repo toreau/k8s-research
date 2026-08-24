@@ -60,6 +60,17 @@ make verify           # print tool versions
   serve the repo with `git daemon` on `127.0.0.1:9418` (unauthenticated — loopback only).
 - The Skiperator clone lives at `./skiperator` and is git-ignored (own repo).
 - This Mac: 64 GiB RAM / 18 CPUs; Docker Desktop allocated 32 GiB (no bump needed).
+- **Namespace default-deny (Phase 4)**: Skiperator's namespace controller applies a `default-deny`
+  NetworkPolicy (Ingress+Egress) to EVERY namespace not in the `namespace-exclusions` ConfigMap
+  (`skiperator-system`). Non-istio workloads in new namespaces break (ArgoCD controller couldn't reach
+  redis/repo-server). Add new namespaces to that ConfigMap and delete the stale default-deny NetPol.
+- **kubectl ambiguity**: after ArgoCD, `kubectl get application` resolves to the ArgoCD kind — use
+  `applications.skiperator.kartverket.no` (full group) for Skiperator CRs.
+- **Background processes** (not reboot-persistent, restart manually): operator host binary
+  (`make run-operator`), `git daemon` on 127.0.0.1:9418 (ArgoCD source), port-forwards
+  `argocd-server` 8081→80 and `istio-ingress-external` 8443→443. ArgoCD admin pw: `/tmp/argocd-admin.txt`.
+- **ArgoCD** 10.4.0 via helm; root Application `argocd/k8s-apps.yaml` syncs `apps/` (auto-sync +
+  self-heal); manages the Skiperator CRs, not the operator-generated Deployment.
 
 ## Conventions
 

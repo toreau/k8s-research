@@ -20,8 +20,24 @@ cluster/   Platform manifests applied directly (kind config, MetalLB, cert-manag
 - [x] Phase 1 — `make setup-local` (cluster + Istio + cert-manager + Skiperator CRDs)
 - [x] Phase 2 — `make run-operator` (host binary) + sample Application
 - [x] Phase 3 — MetalLB + nip.io + ClusterIssuer (HTTPS end-to-end)
-- [ ] Phase 4 — ArgoCD + local git (git daemon) GitOps loop
+- [x] Phase 4 — ArgoCD + local git (git daemon) GitOps loop
 - [ ] Phase 5 — polish (local registry, Routing/SKIPJob demos, k9s)
+
+## Phase 4 notes (verified)
+
+- **ArgoCD** 10.4.0 (app v3.5.1) via helm; UI at http://127.0.0.1:8081 (port-forward; admin pw in
+  `/tmp/argocd-admin.txt`). Root Application `argocd/k8s-apps.yaml` watches `apps/` in
+  `git://host.docker.internal:9418/k8s-research` (auto-sync + self-heal + prune).
+- **git daemon** serves this working repo on 127.0.0.1:9418 (background, restart manually).
+- **GitOps loop proven**: commit `apps/sample-two.yaml` replicas 2→3 → `argocd app sync` → deployment
+  3/3; manual drift on the Skiperator CR → self-heal reverted it.
+- **Gotcha**: Skiperator's namespace controller applies `default-deny` NetworkPolicies (Ingress+Egress)
+  to every non-excluded namespace. ArgoCD (not istio-injected) was broken until `argocd`,
+  `metallb-system`, `local-path-storage` were added to the `namespace-exclusions` ConfigMap and the
+  stale default-deny NetPols deleted.
+- **Gotcha**: `kubectl get application` now resolves to the ArgoCD kind — use the full
+  `applications.skiperator.kartverket.no` for Skiperator CRs.
+- ArgoCD manages the Skiperator CRs, not the operator-generated Deployment — self-heal applies at CR level.
 
 ## Phase 3 notes (verified)
 
