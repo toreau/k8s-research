@@ -1,0 +1,14 @@
+apiVersion: skiperator.kartverket.no/v1alpha1
+kind: Routing
+metadata:
+  name: sample-routing
+  namespace: sample
+spec:
+  hostname: routing.172.21.255.200.nip.io
+  routes:
+    - pathPrefix: /api
+      rewriteUri: true
+      targetApp: hello
+    - pathPrefix: /
+      rewriteUri: false
+      targetApp: sample-two
