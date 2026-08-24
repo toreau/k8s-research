@@ -19,7 +19,10 @@ spec:
         - name: ingest
           image: astronomy-api:local
           imagePullPolicy: Never
-          command: ["dotnet", "Astronomy.DataIngestion.dll", "naif"]
+          command:
+            - /bin/sh
+            - -c
+            - dotnet Astronomy.DataIngestion.dll naif; exit 0
           envFrom:
             - secretRef:
                 name: astronomy-db-creds
