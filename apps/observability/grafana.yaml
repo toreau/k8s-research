@@ -68,8 +68,15 @@ spec:
             - name: config
               mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml
               subPath: provisioning-dashboards.yaml
-            - name: dashboards
-              mountPath: /var/lib/grafana/dashboards/istio
+            - name: dash-mesh
+              mountPath: /var/lib/grafana/dashboards/istio/istio-mesh-dashboard.json
+              subPath: istio-mesh-dashboard.json
+            - name: dash-service
+              mountPath: /var/lib/grafana/dashboards/istio/istio-service-dashboard.json
+              subPath: istio-service-dashboard.json
+            - name: dash-workload
+              mountPath: /var/lib/grafana/dashboards/istio/istio-workload-dashboard.json
+              subPath: istio-workload-dashboard.json
           resources:
             requests:
               cpu: 50m
@@ -82,9 +89,15 @@ spec:
         - name: config
           configMap:
             name: grafana-config
-        - name: dashboards
+        - name: dash-mesh
           configMap:
-            name: grafana-dashboards
+            name: grafana-dashboards-mesh
+        - name: dash-service
+          configMap:
+            name: grafana-dashboards-service
+        - name: dash-workload
+          configMap:
+            name: grafana-dashboards-workload
 ---
 apiVersion: v1
 kind: Service
