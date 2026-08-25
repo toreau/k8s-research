@@ -1,0 +1,9 @@
+# Kyverno helm values (applied directly via `helm install kyverno kyverno/kyverno -n kyverno -f cluster/kyverno/values.yaml`)
+# SLSA: verifyImages needs registry creds for the private GHCR package
+# (toreau/astronomy-api). The secret is created outside git:
+#   kubectl -n kyverno create secret docker-registry regcred \
+#     --docker-server=ghcr.io --docker-username=toreau --docker-password=<read:packages token>
+# `existingImagePullSecrets` renders the controller's --imagePullSecrets arg
+# (the chart generates it from this list, not from extraArgs).
+existingImagePullSecrets:
+  - regcred
