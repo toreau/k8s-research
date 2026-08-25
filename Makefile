@@ -18,7 +18,6 @@ help:
 	@echo "  make cluster         create kind cluster 'kind-skiperator' + all deps (Phase 1)"
 	@echo "  make run-operator    run Skiperator operator as host binary (Phase 2)"
 	@echo "  make operator        start operator in background;  make operator-stop"
-	@echo "  make serve-git       start git daemon for ArgoCD;    make git-stop"
 	@echo "  make pf              start port-forwards (8081, 8443); make pf-stop"
 	@echo "  make status          show cluster + processes + all ArgoCD apps"
 	@echo "  make argo-sync       sync all ArgoCD apps (parent + 6 apps, in order)"
@@ -57,16 +56,6 @@ operator-stop:
 	@pkill -f 'bin/skiperator' 2>/dev/null || true
 	@pkill -f 'make run-local' 2>/dev/null || true
 	@echo "operator stopped"
-
-.PHONY: serve-git
-serve-git:
-	git daemon --reuseaddr --export-all --base-path=$(HOME)/src --listen=127.0.0.1 --port=9418 > /tmp/git-daemon.log 2>&1 &
-	@echo "git daemon on 127.0.0.1:9418 (log: /tmp/git-daemon.log)"
-
-.PHONY: git-stop
-git-stop:
-	@pkill -f 'git daemon' 2>/dev/null || true
-	@echo "git daemon stopped"
 
 .PHONY: pf
 pf:
@@ -123,7 +112,6 @@ argo-sync:
 status:
 	@echo "== cluster =="; kubectl --context $(KUBECTX) get nodes --no-headers 2>/dev/null | awk '{print $$1, $$2}' || echo "cluster not running"
 	@echo "== operator =="; pgrep -f 'bin/skiperator' >/dev/null && echo "running" || echo "stopped"
-	@echo "== git daemon =="; pgrep -f 'git daemon' >/dev/null && echo "running" || echo "stopped"
 	@echo "== watcher =="; pgrep -f 'astronomy-auto-update.sh' >/dev/null && echo "running" || echo "stopped"
 	@echo "== port-forwards =="; lsof -i :8081 -sTCP:LISTEN >/dev/null 2>&1 && echo "argocd 8081 up" || echo "argocd 8081 down"; lsof -i :8443 -sTCP:LISTEN >/dev/null 2>&1 && echo "istio 8443 up" || echo "istio 8443 down"
 	@echo "== argo apps =="; kubectl -n argocd get applications -o custom-columns='NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status' 2>/dev/null || echo "n/a"
@@ -247,13 +235,12 @@ astronomy-ingest-wait:
 	@echo "ingest jobs: all Complete"
 
 # Bootstrap the astronomy demo end to end (idempotent). Assumes the base stack
-# exists (make cluster); starts operator/git daemon/port-forwards if down.
+# exists (make cluster); starts operator/port-forwards if down.
 .PHONY: astronomy
 astronomy:
 	@echo "== astronomy bootstrap =="
 	@kubectl --context $(KUBECTX) get nodes >/dev/null 2>&1 || { echo "cluster not running — run: make cluster"; exit 1; }
 	@pgrep -f 'bin/skiperator' >/dev/null || { echo "starting operator..."; $(MAKE) operator >/dev/null 2>&1; sleep 20; }
-	@pgrep -f 'git daemon' >/dev/null || $(MAKE) serve-git >/dev/null 2>&1
 	@lsof -i :8443 -sTCP:LISTEN >/dev/null 2>&1 || $(MAKE) pf >/dev/null 2>&1
 	@$(MAKE) astronomy-secrets
 	@echo "-- argo sync --"; argocd app sync k8s-apps >/dev/null 2>&1 || true
