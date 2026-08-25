@@ -7,6 +7,7 @@
 - Observability as a **shared, app-agnostic platform**: envoy PodMonitor + istiod ServiceMonitor stay in `prometheus-scrapes` (any istio-injected namespace is auto-scraped); per-app onboarding = ServiceMonitor/PodMonitor labeled `app.kubernetes.io/name: observability` + a TCP 15090 ingress NetPol in the app namespace (pattern in `apps/observability/README.md` and AGENTS.md).
 - Repo layout split per component (`apps/sample/`, `apps/astronomy-infra/`, `apps/astronomy-api/`, `apps/astronomy-ingest/`, `apps/observability/{base,operator,prometheus,scrapes,grafana}/`); migration done with zero deletions (ArgoCD resource ownership moved via tracking annotations).
 - CI (`validate.yml`) now also runs kubeconform + yamllint over `argocd/apps/`.
+- ArgoCD consolidated to a **2-level app-of-apps**: `astronomy` and `prometheus-platform` are now group Applications managing their own nested leaves (`astronomy`: api/db/infra/ingest; `prometheus-platform`: operator/prometheus/scrapes), the rest stay single apps — 14 ArgoCD apps total. Group name `prometheus-platform` avoids clashing with the leaf `prometheus` (Application names are unique per ns).
 
 ### Bugs fixed
 - `make observability` checked `deploy/prometheus-operator` in `monitoring`, but the operator Deployment/SA live in `default` (per manifest) — the rollout gate always failed. Now checks `-n default`.

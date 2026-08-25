@@ -20,15 +20,19 @@ Cluster `kind-skiperator` (k8s **1.34.3**). Istio **1.30.3** (istiod + custom ex
 gateway), cert-manager **1.21.1**, MetalLB **0.16.1** (external gateway LB `172.21.255.200`),
 ArgoCD **10.4.0** (helm), metrics-server **0.9.0**, Skiperator **v2.18.0** (main @ clone).
 
-ArgoCD is **app-of-apps**: root `k8s-apps` (path `argocd/apps`) manages 11 child
-Applications — one per logical component. Observability (`monitoring` ns) is a **shared,
-app-agnostic platform**: any istio-injected namespace's sidecar is auto-scraped.
+ArgoCD is a **2-level app-of-apps**: root `k8s-apps` (path `argocd/apps`) manages 6
+top-level Applications — `astronomy` and `prometheus-platform` are group Applications
+that each manage their own nested children (`astronomy`: api/db/infra/ingest;
+`prometheus-platform`: operator/prometheus/scrapes; the rest are single apps:
+grafana, observability-base, cert-sync, sample-apps). 14 ArgoCD apps in total.
+Observability (`monitoring` ns) is a **shared, app-agnostic platform**: any
+istio-injected namespace's sidecar is auto-scraped.
 
 ## Repo layout
 
 - `apps/` — GitOps-managed, one directory per ArgoCD app: `sample/` (hello, sample-two, routing, SKIPJobs), `astronomy-db/` (postgres), `astronomy-infra/` (ns, PVC, egress + 15090 NetPols), `astronomy-api/` (Skiperator Application), `astronomy-ingest/` (3 Jobs), `observability/{base,operator,prometheus,scrapes,grafana}/` (shared platform), `tools/` (cert-sync CronJob)
 - `cluster/` — applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`
-- `argocd/` — helm values + root Application `k8s-apps.yaml` + `apps/*.yaml` (11 child Applications)
+- `argocd/` — helm values + root Application `k8s-apps.yaml` + `apps/*.yaml` (6 top-level: astronomy + prometheus-platform groups, grafana, observability-base, cert-sync, sample-apps) + `apps/{astronomy,prometheus}/` (7 nested leaf Applications)
 - `testapp/` — UID-150 Go test app image (pushed to `ghcr.io/toreau/k8s-testapp`)
 - `skiperator/` — upstream clone, own repo (git-ignored); its `AGENTS.md` governs edits inside it
 - `.github/workflows/validate.yml` — CI: kubeconform + yamllint over `apps/` and `argocd/apps/` (Skiperator CRD schemas in `ci/schemas/`)
@@ -37,7 +41,7 @@ app-agnostic platform**: any istio-injected namespace's sidecar is auto-scraped.
 
 ```bash
 make status          # cluster + processes + all ArgoCD apps (start here)
-make argo-sync       # sync all ArgoCD apps (parent + 11 children, in order)
+make argo-sync       # sync all ArgoCD apps (parent + 13 apps, nested order)
 make operator        # operator host binary in background (log /tmp/skiperator-operator.log); operator-stop
 make serve-git       # git daemon for ArgoCD (127.0.0.1:9418);                    git-stop
 make pf              # port-forwards: ArgoCD UI 8081, istio HTTPS 8443;           pf-stop
@@ -69,7 +73,7 @@ make verify          # tool versions
 ```bash
 make status
 make argo-sync
-kubectl -n argocd get applications          # 12 apps (parent + 11 children)
+kubectl -n argocd get applications          # 14 apps (root + 6 top + 7 nested leaves)
 argocd app get k8s-apps
 kubectl -n sample get applications.skiperator.kartverket.no,routing,skipjob,cronjob,hpa,po
 kubectl -n istio-gateways get svc istio-ingress-external,gateways.networking.istio.io
@@ -94,8 +98,8 @@ curl --cacert /tmp/local-ca.crt --connect-to sample-two.172.21.255.200.nip.io:44
 - **SNI comes from the URL hostname**, not `Host:` — use `--connect-to`/`--resolve`.
 
 **GitOps / ArgoCD**
-- `kubectl get application` resolves to the ArgoCD kind — use `-n argocd` (12 apps now: parent + 11 children) or `applications.skiperator.kartverket.no` for Skiperator CRs.
-- App-of-apps: `k8s-apps` manages the child Applications; each child owns its resources (tracking-annotation `argocd.argoproj.io/tracking-id`). Sync order matters for runtime deps (db → infra → api/ingest; base → operator → prometheus → scrapes → grafana) — `make argo-sync` does it.
+- `kubectl get application` resolves to the ArgoCD kind — use `-n argocd` (14 apps now: parent + 6 top + 7 nested leaves) or `applications.skiperator.kartverket.no` for Skiperator CRs.
+- App-of-apps: `k8s-apps` manages the top-level Applications; `astronomy`/`prometheus-platform` are nested groups managing their leaf Applications; each leaf owns its resources (tracking-annotation `argocd.argoproj.io/tracking-id`). Sync order matters for runtime deps (group → db → infra → api/ingest; group → operator → prometheus → scrapes; then grafana/others) — `make argo-sync` does it. Application names are unique in the `argocd` ns — the `prometheus-platform` group is named to avoid clashing with the leaf `prometheus`.
 - **ArgoCD automation gotcha**: `syncPolicy.automated` being present keeps auto-sync ON even with `prune: false`/`selfHeal: false` — those only disable pruning/self-healing. To fully pause auto-sync set `syncPolicy.automated: null`.
 - ArgoCD manages the Skiperator **CRs**, not the operator-generated Deployment (self-heal acts at CR level).
 - git daemon is unauthenticated — loopback only; not reboot-persistent.
