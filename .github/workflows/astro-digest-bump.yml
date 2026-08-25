@@ -18,8 +18,11 @@ jobs:
           DIGEST: ${{ github.event.client_payload.digest }}
           SHA: ${{ github.event.client_payload.sha }}
         run: |
+          # imagetools inspect returns "sha256:<hex>"; strip the prefix so the
+          # replacement doesn't duplicate it (the image line already has sha256:).
+          d="${DIGEST#sha256:}"
           f=apps/astronomy/api.yaml
-          sed -i -E "s#(image: ghcr.io/toreau/astronomy-api@sha256:)[0-9a-f]{64}#\1${DIGEST}#" "$f"
+          sed -i -E "s#(image: ghcr.io/toreau/astronomy-api@sha256:)[0-9a-f]{64}#\1${d}#" "$f"
           if git diff --quiet "$f"; then
             echo "digest unchanged, nothing to commit"
           else
