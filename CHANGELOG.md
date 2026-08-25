@@ -10,6 +10,7 @@
 
 ### Bugs fixed
 - `make observability` checked `deploy/prometheus-operator` in `monitoring`, but the operator Deployment/SA live in `default` (per manifest) — the rollout gate always failed. Now checks `-n default`.
+- Envoy `PodMonitor` scraped the same pod **3×** (one target per container: app/istio-init/istio-proxy, all mapped to pod IP:15090). Added a `keep` relabeling on `__meta_kubernetes_pod_container_name = istio-proxy` — one target per sidecar pod (target count per mesh pod 3→1, verified via onboarding demo).
 
 ## 2026-08-24
 
