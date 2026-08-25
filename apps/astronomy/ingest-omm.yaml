@@ -11,14 +11,15 @@ spec:
         sidecar.istio.io/inject: "false"
     spec:
       restartPolicy: Never
+      imagePullSecrets:
+        - name: github-auth
       securityContext:
         runAsUser: 10001
         runAsGroup: 10001
         fsGroup: 10001
       containers:
         - name: ingest
-          image: astronomy-api:local
-          imagePullPolicy: Never
+          image: ghcr.io/toreau/astronomy-api@sha256:2752508a052a096ca85c59726f2767cb82f45199b7a4fb9dc942f50eeda86d17
           command: ["dotnet", "Astronomy.DataIngestion.dll", "omm", "refresh"]
           envFrom:
             - secretRef:

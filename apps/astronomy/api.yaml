@@ -4,7 +4,7 @@ metadata:
   name: astronomy-api
   namespace: astronomy
 spec:
-  image: astronomy-api:local
+  image: ghcr.io/toreau/astronomy-api@sha256:2752508a052a096ca85c59726f2767cb82f45199b7a4fb9dc942f50eeda86d17
   port: 8080
   ingresses:
     - astronomy.172.21.255.200.nip.io

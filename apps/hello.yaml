@@ -4,7 +4,7 @@ metadata:
   name: hello
   namespace: sample
 spec:
-  image: k8s-testapp:latest
+  image: ghcr.io/toreau/k8s-testapp@sha256:1a9061ac940e163995a54b9395d041e5e0512db88eac52df51452f77b5a5445e
   port: 8080
   resources:
     requests:
