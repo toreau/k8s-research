@@ -1,14 +1,14 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: k8s-apps
+  name: astronomy-ingest
   namespace: argocd
 spec:
   project: default
   source:
     repoURL: git://host.docker.internal:9418/k8s-research
     targetRevision: HEAD
-    path: argocd/apps
+    path: apps/astronomy-ingest
   destination:
     server: https://kubernetes.default.svc
   syncPolicy:

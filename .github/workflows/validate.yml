@@ -23,3 +23,12 @@ jobs:
         run: |
           pip install --quiet yamllint
           yamllint -d relaxed apps/
+      - name: kubeconform argocd/apps
+        run: |
+          /tmp/kubeconform -strict -ignore-missing-schemas \
+            -schema-location default \
+            argocd/apps/
+      - name: yamllint argocd/
+        run: |
+          pip install --quiet yamllint
+          yamllint -d relaxed argocd/
