@@ -6,11 +6,14 @@ Local Kubernetes testing stack on a MacBook Pro (Apple Silicon / arm64):
 - **Skiperator** — Kartverket's operator (Application / Routing / SKIPJob CRs)
 - **ArgoCD** — GitOps delivery for the Skiperator manifests (local-only git source)
 
+> Dette dokumentet dekker fase 0–5-oppbyggingen. Gjeldende struktur (7-app-app-of-apps,
+> observability-plattform, astronomy-demo) og alle kommandoer: se `AGENTS.md`.
+
 ## Layout
 
 ```
-apps/      ArgoCD-managed Skiperator manifests (Application/Routing/SKIPJob) — Phase 4 source
-argocd/    ArgoCD helm values + root Application manifest
+apps/      ArgoCD-managed manifests, one directory per ArgoCD app (sample/, astronomy/, observability/, tools/)
+argocd/    ArgoCD helm values + root Application manifest (k8s-apps.yaml → argocd/apps/ 6 Applications)
 cluster/   Platform manifests applied directly (kind config, MetalLB, cert-manager issuer)
 ```
 
@@ -25,25 +28,26 @@ cluster/   Platform manifests applied directly (kind config, MetalLB, cert-manag
 
 ## Phase 5 notes (verified)
 
-- **UID-150 test app** (`testapp/`, Go, `USER 150`): built → `kind load docker-image k8s-testapp:latest`;
-  `apps/hello.yaml` (HPA min2/max4 @cpu50) runs 2/2 with **real HPA targets** (`kubectl get hpa hello`).
-- **Routing demo**: `apps/routing.yaml` (`routing.172.21.255.200.nip.io`) → `/` serves sample-two (nginx),
+- **UID-150 test app** (`testapp/`, Go, `USER 150`): built + pushed to GHCR (`make testapp-image`);
+  `apps/sample/hello.yaml` (HPA min2/max4 @cpu50) runs 2/2 with **real HPA targets** (`kubectl get hpa hello`).
+- **Routing demo**: `apps/sample/routing.yaml` (`routing.172.21.255.200.nip.io`) → `/` serves sample-two (nginx),
   `/api` serves hello (rewriteUri) — both HTTPS with the local CA. Cert secret re-copied into `sample`.
-- **Cron SKIPJob**: `apps/skipjob-cron.yaml` → CronJob `sample-job-cron` (suspended via GitOps).
-- **`enableLocallyBuiltImages: true`** added to `skiperator-config` (clone's `config/skiperator-config.yaml`)
-  so Skiperator skips image→digest resolution for locally-built images. **Side effect: `imagePullPolicy: Never`
-  for ALL apps** → every app image must be pre-loaded into the node (`kind load`); registry images must be
-  **digest-pinned** in the manifest (sample-two now references its digest).
-- **Makefile helpers**: `make operator/operator-stop`, `serve-git/git-stop`, `pf/pf-stop`, `status`.
+- **Cron SKIPJob**: `apps/sample/skipjob-cron.yaml` → CronJob `sample-job-cron` (suspended via GitOps).
+- **`enableLocallyBuiltImages: false`** (default in `skiperator-config`, clone's `config/skiperator-config.yaml`)
+  → Skiperator resolves image→digest against the registry; **all apps are registry-backed** (GHCR digest-pins,
+  `github-auth` imagePullSecret); no `kind load` needed. (The flag was `true` during Phase 5 with
+  `imagePullPolicy: Never`; since Fase 1 everything is registry-pulled.)
+- **Makefile helpers**: `make operator/operator-stop`, `serve-git/git-stop`, `pf/pf-stop`, `status`, `argo-sync`.
 - **k9s** 0.51.0 installed.
 
 ## Phase 4 notes (verified)
 
 - **ArgoCD** 10.4.0 (app v3.5.1) via helm; UI at http://127.0.0.1:8081 (port-forward; admin pw in
-  `/tmp/argocd-admin.txt`). Root Application `argocd/k8s-apps.yaml` watches `apps/` in
-  `git://host.docker.internal:9418/k8s-research` (auto-sync + self-heal + prune).
+  `/tmp/argocd-admin.txt`). **App-of-apps**: root Application `argocd/k8s-apps.yaml` (path `argocd/apps`)
+  manages 6 Applications (astronomy, prometheus-platform, observability-base, grafana, cert-sync,
+  sample-apps) from `git://host.docker.internal:9418/k8s-research` (auto-sync + self-heal + prune).
 - **git daemon** serves this working repo on 127.0.0.1:9418 (background, restart manually).
-- **GitOps loop proven**: commit `apps/sample-two.yaml` replicas 2→3 → `argocd app sync` → deployment
+- **GitOps loop proven**: commit `apps/sample/sample-two.yaml` replicas 2→3 → `make argo-sync` → deployment
   3/3; manual drift on the Skiperator CR → self-heal reverted it.
 - **Gotcha**: Skiperator's namespace controller applies `default-deny` NetworkPolicies (Ingress+Egress)
   to every non-excluded namespace. ArgoCD (not istio-injected) was broken until `argocd`,
