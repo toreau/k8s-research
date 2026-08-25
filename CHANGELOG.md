@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-25 (SLSA-4 — Kyverno in-cluster attestation enforcement)
+
+### Infrastructure & ops
+- **Kyverno (v1.19.0, helm chart 3.9.0) installed in `kind`** (`cluster/kyverno/`, applied directly): `kyverno` added to `namespace-exclusions` (Skiperator default-deny gotcha), `existingImagePullSecrets: [regcred]` renders the controller's `--imagePullSecrets`, and a **`Namespaced`-scoped `ImageValidatingPolicy`** (the current Aug-2026 type; legacy `ClusterPolicy` `verifyImages` is deprecated, removal in v1.20) requires a SLSA-provenance attestation on every `ghcr.io/toreau/astronomy-api*` image via CEL `verifyAttestationSignatures` + cosign keyless (subject `…/ci.yml@refs/heads/main`, issuer `https://token.actions.githubusercontent.com`, ctlog `rekor.sigstore.dev`). Registry auth for the private GHCR package via `credentials.secrets: [regcred]` (docker-registry secret in the kyverno ns, token created outside git).
+- Verified positive (attested image admitted; `rollout restart astronomy-api` → new pod Running) and negative (pod with the unattested old digest denied at admission, never created).
+- **Learning:** the legacy `verifyImages` + `type: SigstoreBundle` path fails on GitHub artifact attestations in v1.19 (`sigstore bundle verification failed: no matching signatures found`) even with correct identities; the `ImageValidatingPolicy` CEL path verifies them. Also: cosign v3 finds these attestations via OCI referrers (v2 does not).
+
 ## 2026-08-25 (SLSA-3 — digest-bump verification gate)
 
 ### Infrastructure & ops
