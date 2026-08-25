@@ -4,3 +4,5 @@ metadata:
   name: sample
   labels:
     istio-injection: enabled
+  annotations:
+    demo.aursand.no/autosync: "del2-proof"
