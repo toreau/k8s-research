@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: git://host.docker.internal:9418/k8s-research
     targetRevision: HEAD
-    path: argocd/apps/prometheus
+    path: apps/observability/platform
   destination:
     server: https://kubernetes.default.svc
   syncPolicy:

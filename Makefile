@@ -21,7 +21,7 @@ help:
 	@echo "  make serve-git       start git daemon for ArgoCD;    make git-stop"
 	@echo "  make pf              start port-forwards (8081, 8443); make pf-stop"
 	@echo "  make status          show cluster + processes + all ArgoCD apps"
-	@echo "  make argo-sync       sync all ArgoCD apps (parent + 13 apps, nested order)"
+	@echo "  make argo-sync       sync all ArgoCD apps (parent + 6 apps, in order)"
 	@echo "  make cluster-delete  delete the kind cluster"
 	@echo "  make verify          print tool versions"
 	@echo "  make astronomy-image build+push arm64, merge multi-arch (CI pushes amd64) to GHCR"
@@ -100,13 +100,11 @@ observability:
 	@$(MAKE) pf-grafana
 	@echo "== observability: grafana http://127.0.0.1:3000 (admin/admin) · prometheus http://127.0.0.1:9090 =="
 
-# Sync all ArgoCD apps (2-level app-of-apps): parent first, then top-level apps
-# (groups first, then their nested leaves in dependency order), then the
-# independent apps. Children are automated, so this is mostly a fast
-# confirmation + apply of new commits.
-ARGO_APPS := astronomy astronomy-db astronomy-infra astronomy-api astronomy-ingest \
-             prometheus-platform prometheus-operator prometheus prometheus-scrapes \
-             observability-base grafana cert-sync sample-apps
+# Sync all ArgoCD apps: parent first, then the 6 apps in dependency order
+# (astronomy; observability-base before prometheus-platform so the monitoring
+# namespace exists; then grafana; cert-sync/sample-apps independent). Apps are
+# automated, so this is mostly a fast confirmation + apply of new commits.
+ARGO_APPS := astronomy observability-base prometheus-platform grafana cert-sync sample-apps
 
 .PHONY: argo-sync
 argo-sync:
@@ -116,7 +114,7 @@ argo-sync:
 		echo "  syncing $$app"; \
 		argocd app sync $$app >/dev/null 2>&1 || { echo "  $$app: FAIL"; exit 1; }; \
 	done
-	@echo "argo-sync: all 13 apps synced"
+	@echo "argo-sync: all 6 apps synced"
 
 .PHONY: status
 status:

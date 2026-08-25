@@ -8,6 +8,7 @@
 - Repo layout split per component (`apps/sample/`, `apps/astronomy-infra/`, `apps/astronomy-api/`, `apps/astronomy-ingest/`, `apps/observability/{base,operator,prometheus,scrapes,grafana}/`); migration done with zero deletions (ArgoCD resource ownership moved via tracking annotations).
 - CI (`validate.yml`) now also runs kubeconform + yamllint over `argocd/apps/`.
 - ArgoCD consolidated to a **2-level app-of-apps**: `astronomy` and `prometheus-platform` are now group Applications managing their own nested leaves (`astronomy`: api/db/infra/ingest; `prometheus-platform`: operator/prometheus/scrapes), the rest stay single apps — 14 ArgoCD apps total. Group name `prometheus-platform` avoids clashing with the leaf `prometheus` (Application names are unique per ns).
+- ArgoCD consolidated again to a **flat app-of-apps (7 apps)**: the nested leaves were merged into `astronomy` (path `apps/astronomy`, recursive: api + db/ + infra/ + ingest/) and `prometheus-platform` (path `apps/observability/platform`), so the Applications list is no longer cluttered with per-component apps. Root `k8s-apps` manages 6: astronomy, prometheus-platform, grafana, observability-base, cert-sync, sample-apps.
 
 ### Bugs fixed
 - `make observability` checked `deploy/prometheus-operator` in `monitoring`, but the operator Deployment/SA live in `default` (per manifest) — the rollout gate always failed. Now checks `-n default`.
