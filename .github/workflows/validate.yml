@@ -1,0 +1,25 @@
+name: validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kubeconform
+        run: |
+          curl -sSLo /tmp/kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          tar xzf /tmp/kubeconform.tar.gz -C /tmp
+      - name: kubeconform apps/
+        run: |
+          /tmp/kubeconform -strict -ignore-missing-schemas \
+            -schema-location default \
+            -schema-location 'ci/schemas/{{.ResourceKind}}.json' \
+            apps/
+      - name: yamllint apps/
+        run: |
+          pip install --quiet yamllint
+          yamllint -d relaxed apps/
