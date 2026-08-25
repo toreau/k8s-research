@@ -1,42 +1,28 @@
----
-# Source: kube-prometheus-stack/templates/prometheus-operator/serviceaccount.yaml
-apiVersion: v1
-kind: ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
 metadata:
-  name: obs-kube-prometheus-stack-operator
-  namespace: monitoring
   labels:
-    
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/instance: obs
-    app.kubernetes.io/version: "88.5.4"
-    app.kubernetes.io/part-of: kube-prometheus-stack
-    chart: kube-prometheus-stack-88.5.4
-    release: "obs"
-    heritage: "Helm"
-    app: kube-prometheus-stack-operator
-    app.kubernetes.io/name: kube-prometheus-stack-prometheus-operator
-    app.kubernetes.io/component: prometheus-operator
-automountServiceAccountToken: true
-
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: prometheus-operator
+    app.kubernetes.io/version: 0.93.1
+  name: prometheus-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-operator
+subjects:
+- kind: ServiceAccount
+  name: prometheus-operator
+  namespace: default
 ---
-# Source: kube-prometheus-stack/templates/prometheus-operator/clusterrole.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: obs-kube-prometheus-stack-operator
   labels:
-    
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/instance: obs
-    app.kubernetes.io/version: "88.5.4"
-    app.kubernetes.io/part-of: kube-prometheus-stack
-    chart: kube-prometheus-stack-88.5.4
-    release: "obs"
-    heritage: "Helm"
-    app: kube-prometheus-stack-operator
-    app.kubernetes.io/name: kube-prometheus-stack-prometheus-operator
-    app.kubernetes.io/component: prometheus-operator
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: prometheus-operator
+    app.kubernetes.io/version: 0.93.1
+  name: prometheus-operator
 rules:
 - apiGroups:
   - monitoring.coreos.com
@@ -91,7 +77,6 @@ rules:
   resources:
   - services
   - services/finalizers
-  - endpoints
   verbs:
   - get
   - create
@@ -113,7 +98,6 @@ rules:
   - list
   - watch
 - apiGroups:
-  - ""
   - events.k8s.io
   resources:
   - events
@@ -135,187 +119,105 @@ rules:
   verbs:
   - get
 - apiGroups:
-  - discovery.k8s.io
+  - ""
   resources:
-  - endpointslices
+  - endpoints
   verbs:
   - get
   - create
-  - list
-  - watch
   - update
   - delete
-
 ---
-# Source: kube-prometheus-stack/templates/prometheus-operator/clusterrolebinding.yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: obs-kube-prometheus-stack-operator
-  labels:
-    
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/instance: obs
-    app.kubernetes.io/version: "88.5.4"
-    app.kubernetes.io/part-of: kube-prometheus-stack
-    chart: kube-prometheus-stack-88.5.4
-    release: "obs"
-    heritage: "Helm"
-    app: kube-prometheus-stack-operator
-    app.kubernetes.io/name: kube-prometheus-stack-prometheus-operator
-    app.kubernetes.io/component: prometheus-operator
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: obs-kube-prometheus-stack-operator
-subjects:
-- kind: ServiceAccount
-  name: obs-kube-prometheus-stack-operator
-  namespace: monitoring
-
----
-# Source: kube-prometheus-stack/templates/prometheus-operator/service.yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: obs-kube-prometheus-stack-operator
-  namespace: monitoring
-  labels:
-    
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/instance: obs
-    app.kubernetes.io/version: "88.5.4"
-    app.kubernetes.io/part-of: kube-prometheus-stack
-    chart: kube-prometheus-stack-88.5.4
-    release: "obs"
-    heritage: "Helm"
-    app: kube-prometheus-stack-operator
-    app.kubernetes.io/name: kube-prometheus-stack-prometheus-operator
-    app.kubernetes.io/component: prometheus-operator
-spec:
-  ports:
-  - name: https
-    port: 443
-    targetPort: https
-  selector:
-    app: kube-prometheus-stack-operator
-    release: "obs"
-  type: "ClusterIP"
-
----
-# Source: kube-prometheus-stack/templates/prometheus-operator/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: obs-kube-prometheus-stack-operator
-  namespace: monitoring
   labels:
-    
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/instance: obs
-    app.kubernetes.io/version: "88.5.4"
-    app.kubernetes.io/part-of: kube-prometheus-stack
-    chart: kube-prometheus-stack-88.5.4
-    release: "obs"
-    heritage: "Helm"
-    app: kube-prometheus-stack-operator
-    app.kubernetes.io/name: kube-prometheus-stack-prometheus-operator
-    app.kubernetes.io/component: prometheus-operator
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: prometheus-operator
+    app.kubernetes.io/version: 0.93.1
+  name: prometheus-operator
+  namespace: default
 spec:
   replicas: 1
-  revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: kube-prometheus-stack-operator
-      release: "obs"
+      app.kubernetes.io/component: controller
+      app.kubernetes.io/name: prometheus-operator
   template:
     metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: prometheus-operator
       labels:
-        
-        app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/instance: obs
-        app.kubernetes.io/version: "88.5.4"
-        app.kubernetes.io/part-of: kube-prometheus-stack
-        chart: kube-prometheus-stack-88.5.4
-        release: "obs"
-        heritage: "Helm"
-        app: kube-prometheus-stack-operator
-        app.kubernetes.io/name: kube-prometheus-stack-prometheus-operator
-        app.kubernetes.io/component: prometheus-operator
+        app.kubernetes.io/component: controller
+        app.kubernetes.io/name: prometheus-operator
+        app.kubernetes.io/version: 0.93.1
     spec:
+      automountServiceAccountToken: true
       containers:
-        - name: kube-prometheus-stack
-          image: "quay.io/prometheus-operator/prometheus-operator:v0.93.1"
-          imagePullPolicy: "IfNotPresent"
-          args:
-            - --kubelet-service=kube-system/obs-kube-prometheus-stack-kubelet
-            - --kubelet-endpoints=true
-            - --kubelet-endpointslice=false
-            - --localhost=127.0.0.1
-            - --prometheus-config-reloader=quay.io/prometheus-operator/prometheus-config-reloader:v0.93.1
-            - --config-reloader-cpu-request=0
-            - --config-reloader-cpu-limit=0
-            - --config-reloader-memory-request=0
-            - --config-reloader-memory-limit=0
-            - --thanos-default-base-image=quay.io/thanos/thanos:v0.42.4
-            - --secret-field-selector=type!=kubernetes.io/dockercfg,type!=kubernetes.io/service-account-token,type!=helm.sh/release.v1
-            - --web.enable-tls=true
-            - --web.cert-file=/cert/cert
-            - --web.key-file=/cert/key
-            - --web.listen-address=:10250
-            - --web.tls-min-version=VersionTLS13
-          ports:
-            - containerPort: 10250
-              name: https
-          env:
-          - name: GOGC
-            value: "30"
-          resources:
-            {}
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-              - ALL
-            readOnlyRootFilesystem: true
-          volumeMounts:
-            - name: tls-secret
-              mountPath: /cert
-              readOnly: true
-          readinessProbe:
-            httpGet:
-              path: /healthz
-              port: https
-              scheme: HTTPS
-            initialDelaySeconds: 0
-            periodSeconds: 10
-            timeoutSeconds: 1
-            successThreshold: 1
-            failureThreshold: 3
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: https
-              scheme: HTTPS
-            initialDelaySeconds: 0
-            periodSeconds: 10
-            timeoutSeconds: 1
-            successThreshold: 1
-            failureThreshold: 3
-      volumes:
-        - name: tls-secret
-          secret:
-            defaultMode: 420
-            secretName: obs-kube-prometheus-stack-admission
+      - args:
+        - --kubelet-service=kube-system/kubelet
+        - --prometheus-config-reloader=quay.io/prometheus-operator/prometheus-config-reloader:v0.93.1
+        - --watch-referenced-objects-in-all-namespaces=true
+        - --disable-unmanaged-prometheus-configuration=true
+        - --kubelet-endpoints=true
+        - --kubelet-endpointslice=false
+        env:
+        - name: GOGC
+          value: "30"
+        image: quay.io/prometheus-operator/prometheus-operator:v0.93.1
+        name: prometheus-operator
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+      nodeSelector:
+        kubernetes.io/os: linux
       securityContext:
-        fsGroup: 65534
-        runAsGroup: 65534
         runAsNonRoot: true
         runAsUser: 65534
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: obs-kube-prometheus-stack-operator
-      automountServiceAccountToken: true
-      terminationGracePeriodSeconds: 30
-
+      serviceAccountName: prometheus-operator
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: prometheus-operator
+    app.kubernetes.io/version: 0.93.1
+  name: prometheus-operator
+  namespace: default
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: prometheus-operator
+    app.kubernetes.io/version: 0.93.1
+  name: prometheus-operator
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+  selector:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: prometheus-operator
 
