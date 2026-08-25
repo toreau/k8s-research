@@ -74,11 +74,13 @@ curl --cacert /tmp/local-ca.crt --connect-to sample-two.172.21.255.200.nip.io:44
 - Reconcilers need the `skiperator-config` / `docker-config` / `github-config` ConfigMaps (`make setup-local` applies them).
 - `skiperator-config` has `enableLocallyBuiltImages: false` → normal imagePull + Skiperator image→digest resolution (registry creds in `skiperator-system/github-config`; the per-namespace `github-auth` imagePullSecret is built by the operator from that token, so the stored value must be `base64(user:token)`, i.e. `.data.token` double-base64). The flag lives in the clone's `config/skiperator-config.yaml` (edit there — `make run-operator` re-applies it, resetting the ConfigMap).
 - HPA (`replicas: {min,max,targetCpuUtilization}`) needs a CPU `request` on the Application or reports "missing request for cpu".
+- **SKIPJob ignored `enableLocallyBuiltImages`** (imagePullPolicy was hardcoded `PullAlways`) — patched locally in the clone (`pkg/resourcegenerator/pod` + `job`, `CreateJobContainer` now takes `LocalBuiltImages`); rebuild via `make operator`. Upstream proposal not yet sent.
 - Namespace controller default-denies (Ingress+Egress) every namespace not in `namespace-exclusions` — non-istio workloads in new namespaces break.
 
 **Ingress / networking**
 - Skiperator's Gateways select `app: istio-ingress-external` in `istio-gateways` (provisioned in `cluster/istio-gateways/`); needs `ISTIO_META_CLUSTER_ID=Kubernetes` + cluster-scoped secrets RBAC for its SA, or istiod won't serve app certs via SDS.
 - App certs are created in `istio-gateways`, but the per-app Gateway's `credentialName` resolves in the **app namespace** — copy the TLS secret (tls.crt/key/ca.crt) there after each reconcile (`make astronomy-cert`, or the `cert-sync` CronJob in `default` re-syncs automatically).
+- **istio 1.30.3 sidecars blackhole outbound to external (non-mesh) hosts** (REGISTRY_ONLY behavior: `BlackHoleCluster`/502) even with `meshConfig.outboundTrafficPolicy: ALLOW_ANY` set — external HTTPS from a sidecar'd workload gets TLS EOF. Workaround: run external-HTTPS workloads sidecar-free (`sidecar.istio.io/inject: "false"`, as the ingest Jobs do). Documented finding; upstream issue not yet filed.
 - Docker Desktop host **cannot route to the kind bridge subnet** — use the port-forward for host access.
 - **SNI comes from the URL hostname**, not `Host:` — use `--connect-to`/`--resolve`.
 
