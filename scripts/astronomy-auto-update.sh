@@ -23,12 +23,12 @@ STATE="$STATE_DIR/last-sha"
 LOG="${LOG:-/tmp/astronomy-auto-update.log}"
 INTERVAL="${INTERVAL:-60}"
 
-# Files whose image digest we bump (all share the astronomy-api digest).
+# File whose image digest we bump. Only the api Deployment's manifest — the
+# ingest Jobs are one-shot + Job.spec.template is immutable, so bumping them
+# would break the sync (Completed Jobs can't be patched) and re-running them is
+# not desired on every code change. Bump them manually when re-ingesting.
 FILES=(
   "$REPO_ROOT/apps/astronomy/api.yaml"
-  "$REPO_ROOT/apps/astronomy/ingest/ingest-naif.yaml"
-  "$REPO_ROOT/apps/astronomy/ingest/ingest-datasets.yaml"
-  "$REPO_ROOT/apps/astronomy/ingest/ingest-omm.yaml"
 )
 
 log() { printf '%s %s\n' "$(date '+%F %T')" "$*" | tee -a "$LOG"; }
