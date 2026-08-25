@@ -45,10 +45,10 @@ make pf              # port-forwards: ArgoCD UI 8081, istio HTTPS 8443;         
 make cluster         # create kind-skiperator + all deps (skiperator: make setup-local)
 make astronomy       # bootstrap the astronomy demo end-to-end (idempotent)
 make astronomy-verify # smoke-test the demo (fail-fast); astronomy-cert / astronomy-secrets
-make astronomy-image # build+push arm64 + merge multi-arch GHCR manifest (CI pushes amd64)
+make astronomy-image # (obsolete since Del 3 — CI builds+merges multi-arch; removed in Del 4)
 make observability   # bootstrap Prometheus+Grafana (monitoring ns, exclusions, argo-sync)
 make pf-grafana      # port-forwards: Grafana 3000 (admin/admin), Prometheus 9090
-make astronomy-auto-update       # run the auto-update watcher once (foreground)
+make astronomy-auto-update       # (obsolete since Del 3 — cloud-driven loop; removed in Del 4)
 make astronomy-auto-update-loop  # start watcher in background (astronomy-auto-update-stop)
 make astronomy-auto-update-plist # install launchd agent (auto-start at login)
 make verify          # tool versions
@@ -62,8 +62,9 @@ make verify          # tool versions
 
 - **Start stack**: `make status` → `make operator pf` (processes are not reboot-persistent).
 - **Astronomy demo (fresh cluster)**: `make cluster` → install ArgoCD + `argocd repo add https://github.com/toreau/k8s-research.git --username toreau --password <token>` (private repo) + `kubectl apply -f argocd/k8s-apps.yaml` → `make astronomy` (starts operator/pf, syncs, waits for ingest, copies cert, verifies).
-- **Iterate an app image**: push the image to GHCR (CI or `make astronomy-image`/`testapp-image`) → update the digest in `apps/*` → commit → `make argo-sync` (or `argocd app sync <app>` for one app). For the astronomy image this is automated by the watcher when running (see below); manual fallback: after a CI-pushed astronomy image, run `make astronomy-image` to restore the multi-arch (amd64+arm64) manifest, then bump the digest.
-- **Astronomy auto-update**: `scripts/astronomy-auto-update.sh` polls the astronomy repo's `main`; on a new commit it pulls the clone, builds arm64 + merges the multi-arch manifest (`make astronomy-image`), bumps the digest in `apps/astronomy/` (api + ingest Jobs), commits and syncs ArgoCD. Start with `make astronomy-auto-update-loop` (background) or `make astronomy-auto-update-plist` (launchd, reboot-persistent); processed state in `.astro-update/last-sha` (git-ignored), log `/tmp/astronomy-auto-update.log`.
+- **Iterate an app image (astronomy) — fully cloud-driven**: push to `astronomy.aursand.no` `main` → CI builds **multi-arch** (amd64 `ubuntu-latest` + arm64 `ubuntu-24.04-arm` matrix) → merges the manifest (`main-<sha>`, `latest`) → dispatches k8s-research (`astro-image-pushed` with `{sha, digest}`) → `astro-digest-bump.yml` bumps the digest in `apps/astronomy/api.yaml` (only that file) → ArgoCD auto-syncs from GitHub → cluster rolls. Zero Mac involvement beyond hosting the cluster. Cross-repo auth: `K8S_RESEARCH_PAT` (secret in the astronomy repo; dispatch to k8s-research; currently the `gh auth token`). Bump pushes use GITHUB_TOKEN (same repo → no CI re-trigger).
+- **Iterate another app's image**: push the image to GHCR → update the digest in `apps/*` → commit **and push** → ArgoCD auto-syncs (`make argo-sync` for an immediate manual sync).
+- **Astronomy auto-update**: the **local watcher is retired** (replaced by the cloud-driven CI→dispatch→bump loop above). The launchd agent and `scripts/astronomy-auto-update.sh` are removed in Del 4.
 - **New namespace**: create it, add to `namespace-exclusions` ConfigMap (`skiperator-system`), delete any stale default-deny NetPol.
 - **GitOps change**: edit `apps/*`, commit **and push** to `origin` (ArgoCD auto-syncs from GitHub; use `make argo-sync` for an immediate manual sync, or sync only the affected app). No local git daemon involved.
 - **Observability onboarding (new app)**: sidecar metrics are auto-scraped, but the app namespace must allow ingress TCP 15090 from `monitoring` (see `apps/astronomy/infra/allow-prometheus-envoy.yaml`). App-own `/metrics` → ServiceMonitor/PodMonitor labeled `app.kubernetes.io/name: observability`. Dashboards → provisioned ConfigMap. Full pattern: `apps/observability/README.md`.
