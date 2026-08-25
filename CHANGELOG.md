@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-25 (SLSA-5 — E2E + docs)
+
+### Infrastructure & ops
+- **End-to-end verified** the full cloud-driven, SLSA-hardened loop with a real astronomy push (`7437db6`): CI multi-arch build + attestation (SLSA-1) → `astro-image-pushed` dispatch → digest-bump **gate** verified the attestation (SLSA-3) → bump commit `a4abbf6` → ArgoCD auto-synced → **Kyverno `ImageValidatingPolicy` admitted** the new pod (SLSA-4) → `astronomy-verify` ALL OK. Negative re-check: an unattested image pod is denied at admission.
+- **`make kyverno`** idempotent bootstrap target: patches `namespace-exclusions`, deletes the stale default-deny NetPol, `helm install` Kyverno (if absent), creates `regcred` (if absent, needs `GHCR_TOKEN`), applies `cluster/kyverno/require-astronomy-attestation.yaml`.
+- README gained a «SLSA supply-chain» section (producer attest → consumer gate → in-cluster Kyverno).
+
 ## 2026-08-25 (SLSA-4 — Kyverno in-cluster attestation enforcement)
 
 ### Infrastructure & ops
