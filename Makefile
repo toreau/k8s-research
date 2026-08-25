@@ -32,6 +32,9 @@ help:
 	@echo "  make astronomy-verify   smoke-test the astronomy demo (fail-fast)"
 	@echo "  make observability   bootstrap Prometheus+Grafana (exclusions, sync, pf-grafana)"
 	@echo "  make pf-grafana      port-forwards: Grafana 3000, Prometheus 9090"
+	@echo "  make astronomy-auto-update       run the auto-update watcher once (foreground)"
+	@echo "  make astronomy-auto-update-loop  start watcher in background;   astronomy-auto-update-stop"
+	@echo "  make astronomy-auto-update-plist install launchd agent (auto-start at login)"
 
 .PHONY: cluster
 cluster:
@@ -121,6 +124,7 @@ status:
 	@echo "== cluster =="; kubectl --context $(KUBECTX) get nodes --no-headers 2>/dev/null | awk '{print $$1, $$2}' || echo "cluster not running"
 	@echo "== operator =="; pgrep -f 'bin/skiperator' >/dev/null && echo "running" || echo "stopped"
 	@echo "== git daemon =="; pgrep -f 'git daemon' >/dev/null && echo "running" || echo "stopped"
+	@echo "== watcher =="; pgrep -f 'astronomy-auto-update.sh' >/dev/null && echo "running" || echo "stopped"
 	@echo "== port-forwards =="; lsof -i :8081 -sTCP:LISTEN >/dev/null 2>&1 && echo "argocd 8081 up" || echo "argocd 8081 down"; lsof -i :8443 -sTCP:LISTEN >/dev/null 2>&1 && echo "istio 8443 up" || echo "istio 8443 down"
 	@echo "== argo apps =="; kubectl -n argocd get applications -o custom-columns='NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status' 2>/dev/null || echo "n/a"
 
@@ -159,6 +163,26 @@ astronomy-image:
 		-t $(ASTRONOMY_IMAGE):main-$$SHA \
 		$(ASTRONOMY_IMAGE):main-$$SHA \
 		$(ASTRONOMY_IMAGE):arm64-$$SHA
+
+# Astronomy auto-update watcher (scripts/astronomy-auto-update.sh): polls the
+# astronomy repo's main; on a new commit builds arm64 + merges the multi-arch
+# manifest, bumps the digest in apps/astronomy, commits and syncs ArgoCD.
+.PHONY: astronomy-auto-update astronomy-auto-update-loop astronomy-auto-update-stop astronomy-auto-update-plist
+astronomy-auto-update:
+	bash scripts/astronomy-auto-update.sh --once
+astronomy-auto-update-loop:
+	nohup bash scripts/astronomy-auto-update.sh --loop > /tmp/astronomy-auto-update.stdout 2>&1 &
+	@echo "watcher started (log: /tmp/astronomy-auto-update.log; stop: make astronomy-auto-update-stop)"
+astronomy-auto-update-stop:
+	@pkill -f 'astronomy-auto-update.sh' 2>/dev/null || true
+	@echo "watcher stopped"
+astronomy-auto-update-plist:
+	@mkdir -p $(HOME)/Library/LaunchAgents
+	@sed "s|__HOME__|$(HOME)|g" scripts/no.aursand.astronomy-auto-update.plist.tpl \
+		> $(HOME)/Library/LaunchAgents/no.aursand.astronomy-auto-update.plist
+	@launchctl bootout gui/$(shell id -u)/no.aursand.astronomy-auto-update 2>/dev/null || true
+	@launchctl bootstrap gui/$(shell id -u) $(HOME)/Library/LaunchAgents/no.aursand.astronomy-auto-update.plist
+	@echo "launchd agent installed + loaded (unload: launchctl bootout gui/$(shell id -u)/no.aursand.astronomy-auto-update)"
 
 # Build+push the UID-150 testapp image to GHCR.
 .PHONY: testapp-image

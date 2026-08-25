@@ -50,6 +50,9 @@ make astronomy-verify # smoke-test the demo (fail-fast); astronomy-cert / astron
 make astronomy-image # build+push arm64 + merge multi-arch GHCR manifest (CI pushes amd64)
 make observability   # bootstrap Prometheus+Grafana (monitoring ns, exclusions, argo-sync)
 make pf-grafana      # port-forwards: Grafana 3000 (admin/admin), Prometheus 9090
+make astronomy-auto-update       # run the auto-update watcher once (foreground)
+make astronomy-auto-update-loop  # start watcher in background (astronomy-auto-update-stop)
+make astronomy-auto-update-plist # install launchd agent (auto-start at login)
 make verify          # tool versions
 ```
 
@@ -61,7 +64,8 @@ make verify          # tool versions
 
 - **Start stack**: `make status` → `make operator serve-git pf` (processes are not reboot-persistent).
 - **Astronomy demo (fresh cluster)**: `make cluster` → `make astronomy` (starts operator/git/pf, syncs, waits for ingest, copies cert, verifies).
-- **Iterate an app image**: push the image to GHCR (CI or `make astronomy-image`/`testapp-image`) → update the digest in `apps/*` → commit → `make argo-sync` (or `argocd app sync <app>` for one app). After a CI-pushed astronomy image, re-run `make astronomy-image` to restore the multi-arch (amd64+arm64) manifest.
+- **Iterate an app image**: push the image to GHCR (CI or `make astronomy-image`/`testapp-image`) → update the digest in `apps/*` → commit → `make argo-sync` (or `argocd app sync <app>` for one app). For the astronomy image this is automated by the watcher when running (see below); manual fallback: after a CI-pushed astronomy image, run `make astronomy-image` to restore the multi-arch (amd64+arm64) manifest, then bump the digest.
+- **Astronomy auto-update**: `scripts/astronomy-auto-update.sh` polls the astronomy repo's `main`; on a new commit it pulls the clone, builds arm64 + merges the multi-arch manifest (`make astronomy-image`), bumps the digest in `apps/astronomy/` (api + ingest Jobs), commits and syncs ArgoCD. Start with `make astronomy-auto-update-loop` (background) or `make astronomy-auto-update-plist` (launchd, reboot-persistent); processed state in `.astro-update/last-sha` (git-ignored), log `/tmp/astronomy-auto-update.log`.
 - **New namespace**: create it, add to `namespace-exclusions` ConfigMap (`skiperator-system`), delete any stale default-deny NetPol.
 - **GitOps change**: edit `apps/*`, commit (git daemon serves this working repo), `make argo-sync` (or sync only the affected app).
 - **Observability onboarding (new app)**: sidecar metrics are auto-scraped, but the app namespace must allow ingress TCP 15090 from `monitoring` (see `apps/astronomy/infra/allow-prometheus-envoy.yaml`). App-own `/metrics` → ServiceMonitor/PodMonitor labeled `app.kubernetes.io/name: observability`. Dashboards → provisioned ConfigMap. Full pattern: `apps/observability/README.md`.

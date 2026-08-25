@@ -7,6 +7,7 @@
 - Observability as a **shared, app-agnostic platform**: envoy PodMonitor + istiod ServiceMonitor in `prometheus-platform` scrape any istio-injected namespace; per-app onboarding = ServiceMonitor/PodMonitor labeled `app.kubernetes.io/name: observability` + a TCP 15090 ingress NetPol in the app namespace (pattern in `apps/observability/README.md` and AGENTS.md).
 - Repo layout grouped per ArgoCD app (`apps/sample/`, `apps/astronomy/{api.yaml,db/,infra/,ingest/}`, `apps/observability/{base,platform,grafana}/`, `apps/tools/`); migrations done with zero workload deletions (ArgoCD resource ownership moved via tracking annotations).
 - CI (`validate.yml`) now also runs kubeconform + yamllint over `argocd/apps/`.
+- **Astronomy auto-update**: local watcher (`scripts/astronomy-auto-update.sh`) that polls the astronomy repo's `main`, builds the arm64 image + merges the multi-arch manifest, bumps the digest in `apps/astronomy/` (api + ingest Jobs), commits and syncs ArgoCD — `make astronomy-auto-update{-loop,-stop,-plist}` (launchd for reboot persistence). CI stays amd64-only (multi-arch-via-QEMU in CI was rejected as too slow).
 
 ### Bugs fixed
 - `make observability` checked `deploy/prometheus-operator` in `monitoring`, but the operator Deployment/SA live in `default` (per manifest) — the rollout gate always failed. Now checks `-n default`.
