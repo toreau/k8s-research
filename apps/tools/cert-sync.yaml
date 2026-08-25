@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cert-sync
+  namespace: default
+---
+# Read the app Certificate + its TLS secret in istio-gateways.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cert-sync-gw
+  namespace: istio-gateways
+rules:
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cert-sync-gw
+  namespace: istio-gateways
+subjects:
+  - kind: ServiceAccount
+    name: cert-sync
+    namespace: default
+roleRef:
+  kind: Role
+  name: cert-sync-gw
+  apiGroup: rbac.authorization.k8s.io
+---
+# Write the copied TLS secret into the astronomy namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cert-sync-astronomy
+  namespace: astronomy
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cert-sync-astronomy
+  namespace: astronomy
+subjects:
+  - kind: ServiceAccount
+    name: cert-sync
+    namespace: default
+roleRef:
+  kind: Role
+  name: cert-sync-astronomy
+  apiGroup: rbac.authorization.k8s.io
+---
+# Re-sync the app TLS secret from istio-gateways into astronomy so the gateway
+# credentialName always resolves (Skiperator issues the cert in istio-gateways).
+# Lives in the default namespace: namespaces under Skiperator's default-deny
+# cannot egress to the kube-apiserver (private CIDRs blocked).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cert-sync
+  namespace: default
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Replace
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          serviceAccountName: cert-sync
+          restartPolicy: OnFailure
+          containers:
+            - name: cert-sync
+              image: bitnami/kubectl:1.36
+              command:
+                - /bin/bash
+                - -ec
+                - |
+                  CERT=$(kubectl -n istio-gateways get certificate -l app.kubernetes.io/name=astronomy-api -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+                  [ -n "$CERT" ] || { echo "cert-sync: no certificate yet"; exit 0; }
+                  SEC=$(kubectl -n istio-gateways get certificate "$CERT" -o jsonpath='{.spec.secretName}')
+                  kubectl -n istio-gateways get secret "$SEC" -o yaml \
+                    | sed -e 's/namespace: istio-gateways/namespace: astronomy/' -e '/^  uid:/d' -e '/^  resourceVersion:/d' -e '/^  creationTimestamp:/d' \
+                    | kubectl apply -f - >/dev/null
+                  echo "cert-sync: synced $SEC"

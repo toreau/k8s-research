@@ -8,6 +8,8 @@ ASTRONOMY_DIR := $(HOME)/src/astronomy.aursand.no
 ASTRONOMY_IMAGE ?= ghcr.io/toreau/astronomy-api
 TESTAPP_IMAGE ?= ghcr.io/toreau/k8s-testapp
 GHCR_USER ?= toreau
+ASTRONOMY_ENV := .env.astronomy
+ASTRONOMY_HOST := astronomy.172.21.255.200.nip.io
 
 .PHONY: help
 help:
@@ -23,6 +25,10 @@ help:
 	@echo "  make verify          print tool versions"
 	@echo "  make astronomy-image build+push arm64, merge multi-arch (CI pushes amd64) to GHCR"
 	@echo "  make testapp-image   build+push UID-150 testapp image to GHCR"
+	@echo "  make astronomy       bootstrap the astronomy demo (secrets/sync/ingest/cert/verify)"
+	@echo "  make astronomy-secrets  ensure astronomy-db-creds secrets (from .env.astronomy)"
+	@echo "  make astronomy-cert     copy the app TLS secret from istio-gateways into astronomy"
+	@echo "  make astronomy-verify   smoke-test the astronomy demo (fail-fast)"
 
 .PHONY: cluster
 cluster:
@@ -122,3 +128,71 @@ testapp-image:
 		-t $(TESTAPP_IMAGE):main-$$SHA \
 		-t $(TESTAPP_IMAGE):latest \
 		-f testapp/Dockerfile testapp
+
+.PHONY: astronomy astronomy-secrets astronomy-cert astronomy-verify astronomy-ingest-wait
+
+# Idempotently ensure the astronomy-db-creds secrets (astronomy-db: full env,
+# astronomy: ASTRONOMY_* keys only) exist from the gitignored .env.astronomy.
+.PHONY: astronomy-secrets
+astronomy-secrets:
+	@test -f $(ASTRONOMY_ENV) || { echo "missing $(ASTRONOMY_ENV) (gitignored)"; exit 1; }
+	@kubectl --context $(KUBECTX) create secret generic astronomy-db-creds -n astronomy-db --from-env-file=$(ASTRONOMY_ENV) --dry-run=client -o yaml | kubectl --context $(KUBECTX) apply -f - >/dev/null
+	@grep '^ASTRONOMY_' $(ASTRONOMY_ENV) > /tmp/.astronomy-app.env
+	@kubectl --context $(KUBECTX) create secret generic astronomy-db-creds -n astronomy --from-env-file=/tmp/.astronomy-app.env --dry-run=client -o yaml | kubectl --context $(KUBECTX) apply -f - >/dev/null
+	@rm -f /tmp/.astronomy-app.env
+	@echo "astronomy-secrets: OK"
+
+# Copy the app TLS secret from istio-gateways into astronomy (Gateway
+# credentialName resolves in the app namespace; cert name has a hash, so the
+# Certificate is found by label and its spec.secretName used).
+.PHONY: astronomy-cert
+astronomy-cert:
+	@CERT=$$(kubectl --context $(KUBECTX) -n istio-gateways get certificate -l app.kubernetes.io/name=astronomy-api -o jsonpath='{.items[0].metadata.name}' 2>/dev/null); \
+	test -n "$$CERT" || { echo "astronomy-cert: Certificate not found (Application not reconciled?)"; exit 1; }; \
+	echo "astronomy-cert: waiting for $$CERT..."; \
+	kubectl --context $(KUBECTX) -n istio-gateways wait --for=condition=Ready certificate/$$CERT --timeout=120s >/dev/null; \
+	SEC=$$(kubectl --context $(KUBECTX) -n istio-gateways get certificate $$CERT -o jsonpath='{.spec.secretName}'); \
+	kubectl --context $(KUBECTX) -n istio-gateways get secret $$SEC -o yaml \
+		| sed -e 's/namespace: istio-gateways/namespace: astronomy/' -e '/^  uid:/d' -e '/^  resourceVersion:/d' -e '/^  creationTimestamp:/d' \
+		| kubectl --context $(KUBECTX) apply -f - >/dev/null
+	@echo "astronomy-cert: TLS secret synced"
+
+# Smoke-test the astronomy demo end to end (fail-fast).
+.PHONY: astronomy-verify
+astronomy-verify:
+	@lsof -i :8443 -sTCP:LISTEN >/dev/null 2>&1 || $(MAKE) pf
+	@echo "== astronomy verify =="
+	@argocd app get k8s-apps | grep -q 'Sync Status:.*Synced' && argocd app get k8s-apps | grep -q 'Health Status:.*Healthy' && echo "  argo: OK" || { echo "  argo: FAIL"; exit 1; }
+	@kubectl --context $(KUBECTX) -n astronomy-db exec deploy/astronomy-db -- pg_isready -U astronomy -d astronomy >/dev/null 2>&1 && echo "  postgres: OK" || { echo "  postgres: FAIL"; exit 1; }
+	@kubectl --context $(KUBECTX) -n astronomy get po -l app=astronomy-api -o jsonpath='{.items[0].status.phase}' | grep -q Running && echo "  astronomy-api: OK" || { echo "  astronomy-api: FAIL"; exit 1; }
+	@kubectl --context $(KUBECTX) -n astronomy get hpa astronomy-api >/dev/null 2>&1 && echo "  hpa: OK" || { echo "  hpa: FAIL"; exit 1; }
+	@curl -s -m 15 --cacert /tmp/local-ca.crt --connect-to $(ASTRONOMY_HOST):443:127.0.0.1:8443 https://$(ASTRONOMY_HOST)/health/ready | python3 -c "import json,sys; d=json.load(sys.stdin); assert d.get('status')=='ready' and d.get('db')=='ok' and d.get('kernels')=='ok' and d.get('starCatalog')=='ok', d" && echo "  /health/ready: OK" || { echo "  /health/ready: FAIL"; exit 1; }
+	@curl -s -m 20 --cacert /tmp/local-ca.crt --connect-to $(ASTRONOMY_HOST):443:127.0.0.1:8443 "https://$(ASTRONOMY_HOST)/api/v1/ephemeris/sun/position" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d.get('rightAscensionDeg'), d" && echo "  sun position: OK" || { echo "  sun position: FAIL"; exit 1; }
+	@echo "== astronomy demo: ALL OK =="
+
+# Wait for the three one-shot ingest Jobs to complete (naif downloads kernels,
+# so this can take ~10 min on a fresh cluster).
+.PHONY: astronomy-ingest-wait
+astronomy-ingest-wait:
+	@for j in ingest-datasets ingest-naif ingest-omm; do \
+		echo "waiting job $$j..."; \
+		kubectl --context $(KUBECTX) -n astronomy wait --for=condition=Complete job/$$j --timeout=1500s >/dev/null 2>&1 || { echo "job $$j did not complete"; exit 1; }; \
+	done
+	@echo "ingest jobs: all Complete"
+
+# Bootstrap the astronomy demo end to end (idempotent). Assumes the base stack
+# exists (make cluster); starts operator/git daemon/port-forwards if down.
+.PHONY: astronomy
+astronomy:
+	@echo "== astronomy bootstrap =="
+	@kubectl --context $(KUBECTX) get nodes >/dev/null 2>&1 || { echo "cluster not running — run: make cluster"; exit 1; }
+	@pgrep -f 'bin/skiperator' >/dev/null || { echo "starting operator..."; $(MAKE) operator >/dev/null 2>&1; sleep 20; }
+	@pgrep -f 'git daemon' >/dev/null || $(MAKE) serve-git >/dev/null 2>&1
+	@lsof -i :8443 -sTCP:LISTEN >/dev/null 2>&1 || $(MAKE) pf >/dev/null 2>&1
+	@$(MAKE) astronomy-secrets
+	@echo "-- argo sync --"; argocd app sync k8s-apps >/dev/null 2>&1 || true
+	@echo "-- wait postgres --"; kubectl --context $(KUBECTX) -n astronomy-db rollout status deploy/astronomy-db --timeout=180s >/dev/null 2>&1 || { echo "postgres not ready"; exit 1; }
+	@$(MAKE) astronomy-ingest-wait
+	@echo "-- wait astronomy-api --"; kubectl --context $(KUBECTX) -n astronomy rollout status deploy/astronomy-api --timeout=300s >/dev/null 2>&1 || { echo "astronomy-api not ready"; exit 1; }
+	@$(MAKE) astronomy-cert
+	@$(MAKE) astronomy-verify
