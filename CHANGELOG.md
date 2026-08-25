@@ -8,6 +8,9 @@
 - Repo layout split per component (`apps/sample/`, `apps/astronomy-infra/`, `apps/astronomy-api/`, `apps/astronomy-ingest/`, `apps/observability/{base,operator,prometheus,scrapes,grafana}/`); migration done with zero deletions (ArgoCD resource ownership moved via tracking annotations).
 - CI (`validate.yml`) now also runs kubeconform + yamllint over `argocd/apps/`.
 
+### Bugs fixed
+- `make observability` checked `deploy/prometheus-operator` in `monitoring`, but the operator Deployment/SA live in `default` (per manifest) — the rollout gate always failed. Now checks `-n default`.
+
 ## 2026-08-24
 
 ### Core
