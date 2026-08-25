@@ -19,4 +19,4 @@ spec:
         - sourceLabels: [__meta_kubernetes_pod_ip]
           action: replace
           targetLabel: __address__
-          replacement: "${1}:15020"
+          replacement: "${1}:15090"
