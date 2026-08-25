@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git://host.docker.internal:9418/k8s-research
+    repoURL: https://github.com/toreau/k8s-research.git
     targetRevision: HEAD
     path: apps/observability/base
   destination:
