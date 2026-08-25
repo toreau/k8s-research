@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  name: prometheus-k8s
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: observability
+spec:
+  replicas: 1
+  retention: 6h
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  serviceAccountName: default
+  serviceMonitorSelector:
+    matchLabels:
+      app.kubernetes.io/name: observability
+  serviceMonitorNamespaceSelector: {}
+  podMonitorSelector:
+    matchLabels:
+      app.kubernetes.io/name: observability
+  podMonitorNamespaceSelector: {}
