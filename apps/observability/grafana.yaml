@@ -13,7 +13,7 @@ data:
     datasources:
       - name: Prometheus
         type: prometheus
-        url: http://prometheus-k8s.monitoring:9090
+        url: http://prometheus-operated.monitoring:9090
         isDefault: true
   provisioning-dashboards.yaml: |
     apiVersion: 1
