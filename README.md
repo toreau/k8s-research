@@ -1,80 +1,59 @@
 # k8s-research
 
-Local Kubernetes testing stack on a MacBook Pro (Apple Silicon / arm64):
+Local Kubernetes testing stack on a MacBook Pro (Apple Silicon / arm64 / macOS): **kind** + **Skiperator** (Kartverket's operator) + **ArgoCD** (GitOps). The cluster is a throwaway local environment, and the deployment loop is **fully cloud-driven** — the Mac only hosts the cluster, the operator and port-forwards.
 
-- **kind** — throwaway local cluster (`kind-skiperator`, k8s 1.34.3)
-- **Skiperator** — Kartverket's operator (Application / Routing / SKIPJob CRs)
-- **ArgoCD** — GitOps delivery for the Skiperator manifests (local-only git source)
+Full detail, key commands and gotchas: **`AGENTS.md`**. Build history: Docmost `Work Logs/2026-08-24 Phase 0` … `2026-08-25 Del 1–4` and the repo `CHANGELOG.md`.
 
-> Dette dokumentet dekker fase 0–5-oppbyggingen. Gjeldende struktur (7-app-app-of-apps,
-> observability-plattform, astronomy-demo) og alle kommandoer: se `AGENTS.md`.
-
-## Layout
+## Architecture
 
 ```
-apps/      ArgoCD-managed manifests, one directory per ArgoCD app (sample/, astronomy/, observability/, tools/)
-argocd/    ArgoCD helm values + root Application manifest (k8s-apps.yaml → argocd/apps/ 6 Applications)
-cluster/   Platform manifests applied directly (kind config, MetalLB, cert-manager issuer)
+astronomy.aursand.no (git) ──CI (multi-arch matrix + manifest merge)──► GHCR
+        │ 2. dispatch astro-image-pushed {sha, digest}
+        ▼
+k8s-research (git, GitHub) ──astro-digest-bump.yml──► digest bump in apps/astronomy/api.yaml
+        │ ArgoCD (auto-sync + self-heal) — source = GitHub (private, token)
+        ▼
+kind cluster (arm64) → Skiperator CRs → operator (host binary) → k8s resources
 ```
 
-## Phase status
+- Cluster `kind-skiperator` (k8s **1.34.3**, single node, native **arm64**).
+- Istio **1.30.3** (istiod + custom external ingress gateway), cert-manager **1.21.1** (local CA), MetalLB **0.16.1** (external LB `172.21.255.200`), ArgoCD **10.4.0** (helm), metrics-server **0.9.0**, Skiperator **v2.18.0** (host binary).
+- ArgoCD is **app-of-apps**: root `k8s-apps` (path `argocd/apps`) manages 6 Applications — `astronomy`, `prometheus-platform`, `observability-base`, `grafana`, `cert-sync`, `sample-apps` (7 apps total). Source is the **private GitHub repo** `toreau/k8s-research` (token in `argocd-repo-secret`, added via `argocd repo add`). No local git daemon.
+- **Astronomy image loop (cloud-driven)**: push to `astronomy.aursand.no` `main` → CI builds **multi-arch** (amd64 + arm64 matrix) → merges the manifest (`main-<sha>`, `latest`) → dispatches `astro-image-pushed` `{sha, digest}` → `astro-digest-bump.yml` bumps the digest in `apps/astronomy/api.yaml` (only that file) → ArgoCD auto-syncs from GitHub → the cluster rolls. No Mac involvement beyond hosting the cluster.
 
-- [x] Phase 0 — tooling + workspace (this repo)
-- [x] Phase 1 — `make setup-local` (cluster + Istio + cert-manager + Skiperator CRDs)
-- [x] Phase 2 — `make run-operator` (host binary) + sample Application
-- [x] Phase 3 — MetalLB + nip.io + ClusterIssuer (HTTPS end-to-end)
-- [x] Phase 4 — ArgoCD + local git (git daemon) GitOps loop
-- [x] Phase 5 — polish (UID-150 test app, Routing demo, cron SKIPJob, HPA, k9s, Makefile helpers)
+## Repo layout
 
-## Phase 5 notes (verified)
+- `apps/` — GitOps-managed, one directory per ArgoCD app (`sample/`, `astronomy/{api.yaml,db/,infra/,ingest/}`, `observability/{base,platform,grafana}/`, `tools/`)
+- `argocd/` — helm values + root Application `k8s-apps.yaml` + `apps/*.yaml` (6 Applications)
+- `cluster/` — applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`
+- `testapp/` — UID-150 Go test app
+- `.github/workflows/` — `validate.yml` (kubeconform + yamllint) + `astro-digest-bump.yml` (cloud-driven digest bump)
 
-- **UID-150 test app** (`testapp/`, Go, `USER 150`): built + pushed to GHCR (`make testapp-image`);
-  `apps/sample/hello.yaml` (HPA min2/max4 @cpu50) runs 2/2 with **real HPA targets** (`kubectl get hpa hello`).
-- **Routing demo**: `apps/sample/routing.yaml` (`routing.172.21.255.200.nip.io`) → `/` serves sample-two (nginx),
-  `/api` serves hello (rewriteUri) — both HTTPS with the local CA. Cert secret re-copied into `sample`.
-- **Cron SKIPJob**: `apps/sample/skipjob-cron.yaml` → CronJob `sample-job-cron` (suspended via GitOps).
-- **`enableLocallyBuiltImages: false`** (default in `skiperator-config`, clone's `config/skiperator-config.yaml`)
-  → Skiperator resolves image→digest against the registry; **all apps are registry-backed** (GHCR digest-pins,
-  `github-auth` imagePullSecret); no `kind load` needed. (The flag was `true` during Phase 5 with
-  `imagePullPolicy: Never`; since Fase 1 everything is registry-pulled.)
-- **Makefile helpers**: `make operator/operator-stop`, `serve-git/git-stop`, `pf/pf-stop`, `status`, `argo-sync`.
-- **k9s** 0.51.0 installed.
+## Quick start
 
-## Phase 4 notes (verified)
+```bash
+make status        # cluster + processes + all 7 ArgoCD apps (start here)
+make operator      # Skiperator operator host binary (log /tmp/skiperator-operator.log); operator-stop
+make pf            # port-forwards: ArgoCD 8081, istio HTTPS 8443; pf-stop
+make argo-sync     # sync all ArgoCD apps (root + 6, in order)
+make cluster       # fresh kind cluster + platform (skiperator: make setup-local)
+make astronomy     # bootstrap the astronomy demo end-to-end (idempotent); astronomy-verify
+make observability # Prometheus + Grafana (monitoring ns); pf-grafana
+```
 
-- **ArgoCD** 10.4.0 (app v3.5.1) via helm; UI at http://127.0.0.1:8081 (port-forward; admin pw in
-  `/tmp/argocd-admin.txt`). **App-of-apps**: root Application `argocd/k8s-apps.yaml` (path `argocd/apps`)
-  manages 6 Applications (astronomy, prometheus-platform, observability-base, grafana, cert-sync,
-  sample-apps) from `git://host.docker.internal:9418/k8s-research` (auto-sync + self-heal + prune).
-- **git daemon** serves this working repo on 127.0.0.1:9418 (background, restart manually).
-- **GitOps loop proven**: commit `apps/sample/sample-two.yaml` replicas 2→3 → `make argo-sync` → deployment
-  3/3; manual drift on the Skiperator CR → self-heal reverted it.
-- **Gotcha**: Skiperator's namespace controller applies `default-deny` NetworkPolicies (Ingress+Egress)
-  to every non-excluded namespace. ArgoCD (not istio-injected) was broken until `argocd`,
-  `metallb-system`, `local-path-storage` were added to the `namespace-exclusions` ConfigMap and the
-  stale default-deny NetPols deleted.
-- **Gotcha**: `kubectl get application` now resolves to the ArgoCD kind — use the full
-  `applications.skiperator.kartverket.no` for Skiperator CRs.
-- ArgoCD manages the Skiperator CRs, not the operator-generated Deployment — self-heal applies at CR level.
+- ArgoCD UI: http://127.0.0.1:8081 · admin pw: `/tmp/argocd-admin.txt`
+- HTTPS test: `curl --cacert /tmp/local-ca.crt --connect-to <host>:443:127.0.0.1:8443 https://<host>/` (CA from `cert-manager/local-test-ca`)
+- **GitOps change**: edit `apps/*` → commit **and push** → ArgoCD auto-syncs (or `make argo-sync` for an immediate manual sync).
+- **Fresh cluster**: `make cluster` → install ArgoCD (helm, `argocd/values.yaml`) → `argocd repo add https://github.com/toreau/k8s-research.git --username toreau --password <token>` (private repo) → `kubectl apply -f argocd/k8s-apps.yaml` → `make astronomy`.
 
-## Phase 3 notes (verified)
+## Verification cheat-sheet
 
-- **External ingress gateway**: Skiperator's ingress Gateways select `app: istio-ingress-external`
-  (in `istio-gateways`) — that workload isn't part of a default istio install. Provisioned via
-  `cluster/istio-gateways/ingress-external-deploy.yaml` (+ support/RBAC). Must set
-  `ISTIO_META_CLUSTER_ID=Kubernetes` and grant the gateway SA `get/list/watch` secrets
-  (cluster-scoped) or istiod won't serve the certs via SDS.
-- **Cert secrets**: Skiperator puts app certs in `istio-gateways`, but the per-app Gateway's
-  `credentialName` resolves in the app namespace — copy the TLS secret (incl. `ca.crt`) there.
-- **MetalLB**: pool `172.21.255.200-250` (kind subnet); external gateway svc pinned to
-  `172.21.255.200` via `metallb.io/loadBalancerIPs`. Old istio-ingressgateway moved to `.201`.
-- **Docker Desktop can't route to the kind bridge subnet** — the host reaches the LB IP via
-  `kubectl port-forward -n istio-gateways svc/istio-ingress-external 8443:443`. TLS verified
-  with `curl --cacert` + `--connect-to` and `openssl s_client` (issuer = local CA, chain OK).
-- **HTTPS test gotcha**: SNI comes from the URL host — use `--resolve`/`--connect-to`, not `-H Host:`.
-- **sample-two**: upstream sample declares `port: 80` but nginx-unprivileged listens on 8080 →
-  patched to `port: 8080`. sample-one stays Pending by design (dummy PVC/UID 150).
-- **metrics-server**: v0.9.0 needs `--kubelet-insecure-tls --cert-dir=/tmp --secure-port=10250`
-  (probes target the named `https` port 10250).
+```bash
+make status
+make argo-sync
+make astronomy-verify      # demo smoke-test (fail-fast)
+kubectl -n argocd get applications   # 7 apps Synced/Healthy
+curl --cacert /tmp/local-ca.crt --connect-to sample-two.172.21.255.200.nip.io:443:127.0.0.1:8443 https://sample-two.172.21.255.200.nip.io/
+```
 
-See `AGENTS.md` for stack details, key commands, and gotchas.
+See `AGENTS.md` for the full command list, workflows, onboarding and gotchas; Docmost (`Projects/k8s-research`, the Norwegian k8s manual, work logs) for durable knowledge and build history.
