@@ -29,7 +29,7 @@ platform**: any istio-injected namespace's sidecar is auto-scraped.
 ## Repo layout
 
 - `apps/` — GitOps-managed, one directory per ArgoCD app: `sample/` (hello, sample-two, routing, SKIPJobs), `astronomy/` (api + `db/` postgres + `infra/` ns/PVC/netpols + `ingest/` 3 Jobs), `observability/{base,platform,grafana}/` (shared platform + Grafana), `tools/` (cert-sync CronJob)
-- `cluster/` — applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`
+- `cluster/` — applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`, `kyverno/` (SLSA image-attestation policy)
 - `argocd/` — helm values + root Application `k8s-apps.yaml` + `apps/*.yaml` (6 Applications: astronomy, prometheus-platform, grafana, observability-base, cert-sync, sample-apps)
 - `testapp/` — UID-150 Go test app image (pushed to `ghcr.io/toreau/k8s-testapp`)
 - `skiperator/` — upstream clone, own repo (git-ignored); its `AGENTS.md` governs edits inside it
@@ -86,6 +86,7 @@ curl --cacert /tmp/local-ca.crt --connect-to sample-two.172.21.255.200.nip.io:44
 - HPA (`replicas: {min,max,targetCpuUtilization}`) needs a CPU `request` on the Application or reports "missing request for cpu".
 - **SKIPJob ignored `enableLocallyBuiltImages`** (imagePullPolicy was hardcoded `PullAlways`) — patched locally in the clone (`pkg/resourcegenerator/pod` + `job`, `CreateJobContainer` now takes `LocalBuiltImages`); rebuild via `make operator`. Upstream proposal not yet sent.
 - Namespace controller default-denies (Ingress+Egress) every namespace not in `namespace-exclusions` — non-istio workloads in new namespaces break.
+- **SLSA / Kyverno** (cluster/kyverno/): use the **`ImageValidatingPolicy`** (`policies.kyverno.io/v1`, stable in v1.19) with CEL `verifyAttestationSignatures` — the legacy `ClusterPolicy` `verifyImages`/`SigstoreBundle` path is deprecated (removal in v1.20) and fails on GitHub artifact attestations ("no matching signatures found"). `credentials.secrets` (regcred in the `kyverno` ns, created outside git) provides GHCR auth for the private astronomy package; keyless attestor = subject `…/ci.yml@refs/heads/main` + issuer `https://token.actions.githubusercontent.com`, ctlog `rekor.sigstore.dev`. Add `kyverno` to `namespace-exclusions` and delete its stale default-deny NetPol (or Kyverno's own webhooks break).
 
 **Ingress / networking**
 - Skiperator's Gateways select `app: istio-ingress-external` in `istio-gateways` (provisioned in `cluster/istio-gateways/`); needs `ISTIO_META_CLUSTER_ID=Kubernetes` + cluster-scoped secrets RBAC for its SA, or istiod won't serve app certs via SDS.
