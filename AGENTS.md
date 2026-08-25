@@ -12,8 +12,7 @@ Full durable detail: Docmost **`Projects/k8s-research`**. Build history:
 ## Architecture at a glance
 
 ```
-apps/ (git) → ArgoCD (auto-sync+self-heal) → Skiperator CRs → operator (host binary) → k8s resources
-       git daemon 127.0.0.1:9418 (host), reached from kind via host.docker.internal
+apps/ (git, GitHub toreau/k8s-research) → ArgoCD (auto-sync+self-heal) → Skiperator CRs → operator (host binary) → k8s resources
 ```
 
 Cluster `kind-skiperator` (k8s **1.34.3**). Istio **1.30.3** (istiod + custom external
@@ -42,7 +41,6 @@ platform**: any istio-injected namespace's sidecar is auto-scraped.
 make status          # cluster + processes + all ArgoCD apps (start here)
 make argo-sync       # sync all ArgoCD apps (parent + 6 apps, in order)
 make operator        # operator host binary in background (log /tmp/skiperator-operator.log); operator-stop
-make serve-git       # git daemon for ArgoCD (127.0.0.1:9418);                    git-stop
 make pf              # port-forwards: ArgoCD UI 8081, istio HTTPS 8443;           pf-stop
 make cluster         # create kind-skiperator + all deps (skiperator: make setup-local)
 make astronomy       # bootstrap the astronomy demo end-to-end (idempotent)
@@ -62,12 +60,12 @@ make verify          # tool versions
 
 ## Workflows
 
-- **Start stack**: `make status` → `make operator serve-git pf` (processes are not reboot-persistent).
-- **Astronomy demo (fresh cluster)**: `make cluster` → `make astronomy` (starts operator/git/pf, syncs, waits for ingest, copies cert, verifies).
+- **Start stack**: `make status` → `make operator pf` (processes are not reboot-persistent).
+- **Astronomy demo (fresh cluster)**: `make cluster` → install ArgoCD + `argocd repo add https://github.com/toreau/k8s-research.git --username toreau --password <token>` (private repo) + `kubectl apply -f argocd/k8s-apps.yaml` → `make astronomy` (starts operator/pf, syncs, waits for ingest, copies cert, verifies).
 - **Iterate an app image**: push the image to GHCR (CI or `make astronomy-image`/`testapp-image`) → update the digest in `apps/*` → commit → `make argo-sync` (or `argocd app sync <app>` for one app). For the astronomy image this is automated by the watcher when running (see below); manual fallback: after a CI-pushed astronomy image, run `make astronomy-image` to restore the multi-arch (amd64+arm64) manifest, then bump the digest.
 - **Astronomy auto-update**: `scripts/astronomy-auto-update.sh` polls the astronomy repo's `main`; on a new commit it pulls the clone, builds arm64 + merges the multi-arch manifest (`make astronomy-image`), bumps the digest in `apps/astronomy/` (api + ingest Jobs), commits and syncs ArgoCD. Start with `make astronomy-auto-update-loop` (background) or `make astronomy-auto-update-plist` (launchd, reboot-persistent); processed state in `.astro-update/last-sha` (git-ignored), log `/tmp/astronomy-auto-update.log`.
 - **New namespace**: create it, add to `namespace-exclusions` ConfigMap (`skiperator-system`), delete any stale default-deny NetPol.
-- **GitOps change**: edit `apps/*`, commit (git daemon serves this working repo), `make argo-sync` (or sync only the affected app).
+- **GitOps change**: edit `apps/*`, commit **and push** to `origin` (ArgoCD auto-syncs from GitHub; use `make argo-sync` for an immediate manual sync, or sync only the affected app). No local git daemon involved.
 - **Observability onboarding (new app)**: sidecar metrics are auto-scraped, but the app namespace must allow ingress TCP 15090 from `monitoring` (see `apps/astronomy/infra/allow-prometheus-envoy.yaml`). App-own `/metrics` → ServiceMonitor/PodMonitor labeled `app.kubernetes.io/name: observability`. Dashboards → provisioned ConfigMap. Full pattern: `apps/observability/README.md`.
 - **Teardown**: `make cluster-delete` (also `git-stop`/`pf-stop`/`operator-stop`).
 
@@ -105,7 +103,7 @@ curl --cacert /tmp/local-ca.crt --connect-to sample-two.172.21.255.200.nip.io:44
 - App-of-apps: `k8s-apps` manages the 6 Applications; `astronomy` and `prometheus-platform` are direct workload apps owning their resources (tracking-annotation `argocd.argoproj.io/tracking-id`). Sync order matters for runtime deps (astronomy; observability-base → prometheus-platform → grafana; then cert-sync/sample-apps) — `make argo-sync` does it.
 - **ArgoCD automation gotcha**: `syncPolicy.automated` being present keeps auto-sync ON even with `prune: false`/`selfHeal: false` — those only disable pruning/self-healing. To fully pause auto-sync set `syncPolicy.automated: null`.
 - ArgoCD manages the Skiperator **CRs**, not the operator-generated Deployment (self-heal acts at CR level).
-- git daemon is unauthenticated — loopback only; not reboot-persistent.
+- ArgoCD sources the **private** `https://github.com/toreau/k8s-research.git` with a GitHub token stored in `argocd-repo-secret` (added via `argocd repo add --username toreau --password <token>`; currently the `gh auth token` — rotate if it needs to be revoked). Fresh clusters need this repo-add step (with a token) before apps can sync.
 
 ## Conventions
 
