@@ -27,6 +27,7 @@ ArgoCD **10.4.0** (helm), metrics-server **0.9.0**, Skiperator **v2.18.0** (main
 - `argocd/` — helm values + root Application `k8s-apps.yaml`
 - `testapp/` — UID-150 Go test app image (pushed to `ghcr.io/toreau/k8s-testapp`)
 - `skiperator/` — upstream clone, own repo (git-ignored); its `AGENTS.md` governs edits inside it
+- `.github/workflows/validate.yml` — CI: kubeconform + yamllint over `apps/` (Skiperator CRD schemas in `ci/schemas/`)
 
 ## Key commands
 
