@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-25
+
+### Infrastructure & ops
+- ArgoCD **app-of-apps**: root `k8s-apps` now points at `argocd/apps/` and manages 11 child Applications — one per logical component (sample-apps, astronomy-db, astronomy-infra, astronomy-api, astronomy-ingest, observability-base, prometheus-operator, prometheus, prometheus-scrapes, grafana, cert-sync). Each component syncs/verifies independently; `make argo-sync` syncs all in dependency order; `make status` lists every app.
+- Observability as a **shared, app-agnostic platform**: envoy PodMonitor + istiod ServiceMonitor stay in `prometheus-scrapes` (any istio-injected namespace is auto-scraped); per-app onboarding = ServiceMonitor/PodMonitor labeled `app.kubernetes.io/name: observability` + a TCP 15090 ingress NetPol in the app namespace (pattern in `apps/observability/README.md` and AGENTS.md).
+- Repo layout split per component (`apps/sample/`, `apps/astronomy-infra/`, `apps/astronomy-api/`, `apps/astronomy-ingest/`, `apps/observability/{base,operator,prometheus,scrapes,grafana}/`); migration done with zero deletions (ArgoCD resource ownership moved via tracking annotations).
+- CI (`validate.yml`) now also runs kubeconform + yamllint over `argocd/apps/`.
+
 ## 2026-08-24
 
 ### Core

@@ -20,7 +20,8 @@ help:
 	@echo "  make operator        start operator in background;  make operator-stop"
 	@echo "  make serve-git       start git daemon for ArgoCD;    make git-stop"
 	@echo "  make pf              start port-forwards (8081, 8443); make pf-stop"
-	@echo "  make status          show cluster + processes + ArgoCD app state"
+	@echo "  make status          show cluster + processes + all ArgoCD apps"
+	@echo "  make argo-sync       sync all ArgoCD apps (parent + 11 children, in order)"
 	@echo "  make cluster-delete  delete the kind cluster"
 	@echo "  make verify          print tool versions"
 	@echo "  make astronomy-image build+push arm64, merge multi-arch (CI pushes amd64) to GHCR"
@@ -91,12 +92,29 @@ observability:
 	@echo "== observability bootstrap =="
 	@kubectl --context $(KUBECTX) get nodes >/dev/null 2>&1 || { echo "cluster not running — run: make cluster"; exit 1; }
 	@kubectl --context $(KUBECTX) -n skiperator-system patch cm namespace-exclusions --type merge -p '{"data":{"monitoring":"true"}}' >/dev/null 2>&1 || true
-	@argocd app sync k8s-apps >/dev/null 2>&1 || true
+	@$(MAKE) argo-sync >/dev/null 2>&1 || true
 	@kubectl --context $(KUBECTX) -n monitoring rollout status deploy/prometheus-operator --timeout=120s >/dev/null 2>&1 || { echo "prometheus-operator not ready"; exit 1; }
 	@kubectl --context $(KUBECTX) -n monitoring wait --for=condition=Available prometheus/prometheus-k8s --timeout=180s >/dev/null 2>&1 || echo "warn: Prometheus not Available yet (targets will appear shortly)"
 	@kubectl --context $(KUBECTX) -n monitoring rollout status deploy/grafana --timeout=120s >/dev/null 2>&1 || { echo "grafana not ready"; exit 1; }
 	@$(MAKE) pf-grafana
 	@echo "== observability: grafana http://127.0.0.1:3000 (admin/admin) · prometheus http://127.0.0.1:9090 =="
+
+# Sync all ArgoCD apps (app-of-apps): parent first, then the 11 children in
+# dependency order (db -> infra -> api -> ingest; base -> operator -> prometheus
+# -> scrapes -> grafana; sample/cert-sync independent). Children are automated,
+# so this is mostly a fast confirmation + apply of new commits.
+ARGO_APPS := sample-apps astronomy-db astronomy-infra astronomy-api astronomy-ingest \
+             observability-base prometheus-operator prometheus prometheus-scrapes grafana cert-sync
+
+.PHONY: argo-sync
+argo-sync:
+	@echo "== argo sync =="
+	@argocd app sync k8s-apps >/dev/null 2>&1 || true
+	@for app in $(ARGO_APPS); do \
+		echo "  syncing $$app"; \
+		argocd app sync $$app >/dev/null 2>&1 || { echo "  $$app: FAIL"; exit 1; }; \
+	done
+	@echo "argo-sync: all 11 children synced"
 
 .PHONY: status
 status:
@@ -104,7 +122,7 @@ status:
 	@echo "== operator =="; pgrep -f 'bin/skiperator' >/dev/null && echo "running" || echo "stopped"
 	@echo "== git daemon =="; pgrep -f 'git daemon' >/dev/null && echo "running" || echo "stopped"
 	@echo "== port-forwards =="; lsof -i :8081 -sTCP:LISTEN >/dev/null 2>&1 && echo "argocd 8081 up" || echo "argocd 8081 down"; lsof -i :8443 -sTCP:LISTEN >/dev/null 2>&1 && echo "istio 8443 up" || echo "istio 8443 down"
-	@echo "== argo app =="; kubectl -n argocd get application k8s-apps -o jsonpath='{.status.sync.status}/{.status.health.status}{"\n"}' 2>/dev/null || echo "n/a"
+	@echo "== argo apps =="; kubectl -n argocd get applications -o custom-columns='NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status' 2>/dev/null || echo "n/a"
 
 .PHONY: cluster-delete
 cluster-delete:

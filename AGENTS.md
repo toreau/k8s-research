@@ -20,19 +20,24 @@ Cluster `kind-skiperator` (k8s **1.34.3**). Istio **1.30.3** (istiod + custom ex
 gateway), cert-manager **1.21.1**, MetalLB **0.16.1** (external gateway LB `172.21.255.200`),
 ArgoCD **10.4.0** (helm), metrics-server **0.9.0**, Skiperator **v2.18.0** (main @ clone).
 
+ArgoCD is **app-of-apps**: root `k8s-apps` (path `argocd/apps`) manages 11 child
+Applications — one per logical component. Observability (`monitoring` ns) is a **shared,
+app-agnostic platform**: any istio-injected namespace's sidecar is auto-scraped.
+
 ## Repo layout
 
-- `apps/` — GitOps-managed: Skiperator CRs (hello, sample-two, sample-routing, SKIPJobs) + astronomy-demo (postgres, ingest, api) + `tools/` (cert-sync CronJob) + `observability/` (Prometheus operator + Prometheus + istiod/envoy scrapes + Grafana)
+- `apps/` — GitOps-managed, one directory per ArgoCD app: `sample/` (hello, sample-two, routing, SKIPJobs), `astronomy-db/` (postgres), `astronomy-infra/` (ns, PVC, egress + 15090 NetPols), `astronomy-api/` (Skiperator Application), `astronomy-ingest/` (3 Jobs), `observability/{base,operator,prometheus,scrapes,grafana}/` (shared platform), `tools/` (cert-sync CronJob)
 - `cluster/` — applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`
-- `argocd/` — helm values + root Application `k8s-apps.yaml`
+- `argocd/` — helm values + root Application `k8s-apps.yaml` + `apps/*.yaml` (11 child Applications)
 - `testapp/` — UID-150 Go test app image (pushed to `ghcr.io/toreau/k8s-testapp`)
 - `skiperator/` — upstream clone, own repo (git-ignored); its `AGENTS.md` governs edits inside it
-- `.github/workflows/validate.yml` — CI: kubeconform + yamllint over `apps/` (Skiperator CRD schemas in `ci/schemas/`)
+- `.github/workflows/validate.yml` — CI: kubeconform + yamllint over `apps/` and `argocd/apps/` (Skiperator CRD schemas in `ci/schemas/`)
 
 ## Key commands
 
 ```bash
-make status          # cluster + processes + ArgoCD app state (start here)
+make status          # cluster + processes + all ArgoCD apps (start here)
+make argo-sync       # sync all ArgoCD apps (parent + 11 children, in order)
 make operator        # operator host binary in background (log /tmp/skiperator-operator.log); operator-stop
 make serve-git       # git daemon for ArgoCD (127.0.0.1:9418);                    git-stop
 make pf              # port-forwards: ArgoCD UI 8081, istio HTTPS 8443;           pf-stop
@@ -40,7 +45,7 @@ make cluster         # create kind-skiperator + all deps (skiperator: make setup
 make astronomy       # bootstrap the astronomy demo end-to-end (idempotent)
 make astronomy-verify # smoke-test the demo (fail-fast); astronomy-cert / astronomy-secrets
 make astronomy-image # build+push arm64 + merge multi-arch GHCR manifest (CI pushes amd64)
-make observability   # bootstrap Prometheus+Grafana (monitoring ns, exclusions, sync)
+make observability   # bootstrap Prometheus+Grafana (monitoring ns, exclusions, argo-sync)
 make pf-grafana      # port-forwards: Grafana 3000 (admin/admin), Prometheus 9090
 make verify          # tool versions
 ```
@@ -53,15 +58,18 @@ make verify          # tool versions
 
 - **Start stack**: `make status` → `make operator serve-git pf` (processes are not reboot-persistent).
 - **Astronomy demo (fresh cluster)**: `make cluster` → `make astronomy` (starts operator/git/pf, syncs, waits for ingest, copies cert, verifies).
-- **Iterate an app image**: push the image to GHCR (CI or `make astronomy-image`/`testapp-image`) → update the digest in `apps/*` → commit → `argocd app sync k8s-apps`. After a CI-pushed astronomy image, re-run `make astronomy-image` to restore the multi-arch (amd64+arm64) manifest.
+- **Iterate an app image**: push the image to GHCR (CI or `make astronomy-image`/`testapp-image`) → update the digest in `apps/*` → commit → `make argo-sync` (or `argocd app sync <app>` for one app). After a CI-pushed astronomy image, re-run `make astronomy-image` to restore the multi-arch (amd64+arm64) manifest.
 - **New namespace**: create it, add to `namespace-exclusions` ConfigMap (`skiperator-system`), delete any stale default-deny NetPol.
-- **GitOps change**: edit `apps/*`, commit (git daemon serves this working repo), `argocd app sync`.
+- **GitOps change**: edit `apps/*`, commit (git daemon serves this working repo), `make argo-sync` (or sync only the affected app).
+- **Observability onboarding (new app)**: sidecar metrics are auto-scraped, but the app namespace must allow ingress TCP 15090 from `monitoring` (see `apps/astronomy-infra/allow-prometheus-envoy.yaml`). App-own `/metrics` → ServiceMonitor/PodMonitor labeled `app.kubernetes.io/name: observability`. Dashboards → provisioned ConfigMap. Full pattern: `apps/observability/README.md`.
 - **Teardown**: `make cluster-delete` (also `git-stop`/`pf-stop`/`operator-stop`).
 
 ## Verification cheat-sheet
 
 ```bash
 make status
+make argo-sync
+kubectl -n argocd get applications          # 12 apps (parent + 11 children)
 argocd app get k8s-apps
 kubectl -n sample get applications.skiperator.kartverket.no,routing,skipjob,cronjob,hpa,po
 kubectl -n istio-gateways get svc istio-ingress-external,gateways.networking.istio.io
@@ -86,7 +94,9 @@ curl --cacert /tmp/local-ca.crt --connect-to sample-two.172.21.255.200.nip.io:44
 - **SNI comes from the URL hostname**, not `Host:` — use `--connect-to`/`--resolve`.
 
 **GitOps / ArgoCD**
-- `kubectl get application` resolves to the ArgoCD kind — use `applications.skiperator.kartverket.no` for Skiperator CRs.
+- `kubectl get application` resolves to the ArgoCD kind — use `-n argocd` (12 apps now: parent + 11 children) or `applications.skiperator.kartverket.no` for Skiperator CRs.
+- App-of-apps: `k8s-apps` manages the child Applications; each child owns its resources (tracking-annotation `argocd.argoproj.io/tracking-id`). Sync order matters for runtime deps (db → infra → api/ingest; base → operator → prometheus → scrapes → grafana) — `make argo-sync` does it.
+- **ArgoCD automation gotcha**: `syncPolicy.automated` being present keeps auto-sync ON even with `prune: false`/`selfHeal: false` — those only disable pruning/self-healing. To fully pause auto-sync set `syncPolicy.automated: null`.
 - ArgoCD manages the Skiperator **CRs**, not the operator-generated Deployment (self-heal acts at CR level).
 - git daemon is unauthenticated — loopback only; not reboot-persistent.
 
