@@ -87,13 +87,14 @@ pf-grafana:
 
 # Bootstrap Prometheus+Grafana (Fase 3): ensure 'monitoring' is exempt from
 # Skiperator default-deny, sync, wait for operator/Prometheus/Grafana, port-forwards.
+# NB: the prometheus-operator Deployment/SA live in the 'default' namespace (manifest).
 .PHONY: observability
 observability:
 	@echo "== observability bootstrap =="
 	@kubectl --context $(KUBECTX) get nodes >/dev/null 2>&1 || { echo "cluster not running — run: make cluster"; exit 1; }
 	@kubectl --context $(KUBECTX) -n skiperator-system patch cm namespace-exclusions --type merge -p '{"data":{"monitoring":"true"}}' >/dev/null 2>&1 || true
 	@$(MAKE) argo-sync >/dev/null 2>&1 || true
-	@kubectl --context $(KUBECTX) -n monitoring rollout status deploy/prometheus-operator --timeout=120s >/dev/null 2>&1 || { echo "prometheus-operator not ready"; exit 1; }
+	@kubectl --context $(KUBECTX) -n default rollout status deploy/prometheus-operator --timeout=120s >/dev/null 2>&1 || { echo "prometheus-operator not ready"; exit 1; }
 	@kubectl --context $(KUBECTX) -n monitoring wait --for=condition=Available prometheus/prometheus-k8s --timeout=180s >/dev/null 2>&1 || echo "warn: Prometheus not Available yet (targets will appear shortly)"
 	@kubectl --context $(KUBECTX) -n monitoring rollout status deploy/grafana --timeout=120s >/dev/null 2>&1 || { echo "grafana not ready"; exit 1; }
 	@$(MAKE) pf-grafana
