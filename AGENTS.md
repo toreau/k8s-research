@@ -53,7 +53,7 @@ make verify          # tool versions
 
 - **Start stack**: `make status` → `make operator serve-git pf` (processes are not reboot-persistent).
 - **Astronomy demo (fresh cluster)**: `make cluster` → `make astronomy` (starts operator/git/pf, syncs, waits for ingest, copies cert, verifies).
-- **Iterate an app image**: push the image to GHCR (CI or `make astronomy-image`/`testapp-image`) → update the digest in `apps/*` → commit → `argocd app sync k8s-apps`.
+- **Iterate an app image**: push the image to GHCR (CI or `make astronomy-image`/`testapp-image`) → update the digest in `apps/*` → commit → `argocd app sync k8s-apps`. After a CI-pushed astronomy image, re-run `make astronomy-image` to restore the multi-arch (amd64+arm64) manifest.
 - **New namespace**: create it, add to `namespace-exclusions` ConfigMap (`skiperator-system`), delete any stale default-deny NetPol.
 - **GitOps change**: edit `apps/*`, commit (git daemon serves this working repo), `argocd app sync`.
 - **Teardown**: `make cluster-delete` (also `git-stop`/`pf-stop`/`operator-stop`).
