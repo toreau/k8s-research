@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-25 (docs audit — k8s-research + astronomy)
+
+### Documentation
+- Full documentation audit of k8s-research + astronomy.aursand.no (ground-truth snapshot, 52-doc inventory, claim-for-claim verification, gap report). Fixes (Docmost): corrected `namespace-exclusions` list (Projects gotcha #5 + k8s manual §7/§13 — 11 values incl. `kyverno`; `local-path-storage`/`metallb-system` are NOT excluded), added `cluster/kyverno/`, Kyverno version and `make kyverno` to Projects, added a «SLSA / Kyverno» section to Decisions & gotchas, linked `Projects/k8s-research` from the canonical Projects index, refreshed Services/astronomy (commit `7437db6`, SLSA/CI, degraded-registry reality), host-server (48/48 containers, disk 34 %) and Services/coolify (4.3.10). Astronomy repo: README/AGENTS/API.md/live-verification refreshed (commit `42d1c09`).
+- **Prod finding (separate approval needed):** the astronomy prod dataset registry has been empty since the Postgres switch — `omm-refresh` succeeds daily but the sat-gate rejects CelesTrak data (bstar > 0.02, stale epochs), and `naif-kernels` crashed 08-23 (core dump on a USNO fetch) → star-catalog/satellite endpoints 503. Recommended fix: re-run `naif-kernels` once, relax sat-gate thresholds, raise the naif timeout and make per-source fetches non-fatal. Detail: `Work Logs/2026-08-25 k8s-research + astronomy docs audit — gap report`.
+
 ## 2026-08-25 (SLSA-5 — E2E + docs)
 
 ### Infrastructure & ops
