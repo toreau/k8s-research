@@ -22,7 +22,7 @@ ArgoCD **10.4.0** (helm), metrics-server **0.9.0**, Skiperator **v2.18.0** (main
 
 ## Repo layout
 
-- `apps/` — GitOps-managed: Skiperator CRs (hello, sample-two, sample-routing, SKIPJobs) + astronomy-demo (postgres, ingest, api) + `tools/` (cert-sync CronJob)
+- `apps/` — GitOps-managed: Skiperator CRs (hello, sample-two, sample-routing, SKIPJobs) + astronomy-demo (postgres, ingest, api) + `tools/` (cert-sync CronJob) + `observability/` (Prometheus operator + Prometheus + istiod/envoy scrapes + Grafana)
 - `cluster/` — applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`
 - `argocd/` — helm values + root Application `k8s-apps.yaml`
 - `testapp/` — UID-150 Go test app image (pushed to `ghcr.io/toreau/k8s-testapp`)
@@ -39,6 +39,8 @@ make cluster         # create kind-skiperator + all deps (skiperator: make setup
 make astronomy       # bootstrap the astronomy demo end-to-end (idempotent)
 make astronomy-verify # smoke-test the demo (fail-fast); astronomy-cert / astronomy-secrets
 make astronomy-image # build+push arm64 + merge multi-arch GHCR manifest (CI pushes amd64)
+make observability   # bootstrap Prometheus+Grafana (monitoring ns, exclusions, sync)
+make pf-grafana      # port-forwards: Grafana 3000 (admin/admin), Prometheus 9090
 make verify          # tool versions
 ```
 

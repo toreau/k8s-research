@@ -29,6 +29,8 @@ help:
 	@echo "  make astronomy-secrets  ensure astronomy-db-creds secrets (from .env.astronomy)"
 	@echo "  make astronomy-cert     copy the app TLS secret from istio-gateways into astronomy"
 	@echo "  make astronomy-verify   smoke-test the astronomy demo (fail-fast)"
+	@echo "  make observability   bootstrap Prometheus+Grafana (exclusions, sync, pf-grafana)"
+	@echo "  make pf-grafana      port-forwards: Grafana 3000, Prometheus 9090"
 
 .PHONY: cluster
 cluster:
@@ -72,7 +74,29 @@ pf:
 pf-stop:
 	@pkill -f 'port-forward.*8081' 2>/dev/null || true
 	@pkill -f 'port-forward.*8443' 2>/dev/null || true
+	@pkill -f 'port-forward.*3000' 2>/dev/null || true
+	@pkill -f 'port-forward.*9090' 2>/dev/null || true
 	@echo "port-forwards stopped"
+
+.PHONY: pf-grafana
+pf-grafana:
+	nohup kubectl --context $(KUBECTX) port-forward -n monitoring svc/grafana 3000:3000 > /tmp/pf-grafana.log 2>&1 &
+	nohup kubectl --context $(KUBECTX) port-forward -n monitoring svc/prometheus-operated 9090:9090 > /tmp/pf-prom.log 2>&1 &
+	@echo "grafana http://127.0.0.1:3000 (admin/admin), prometheus http://127.0.0.1:9090"
+
+# Bootstrap Prometheus+Grafana (Fase 3): ensure 'monitoring' is exempt from
+# Skiperator default-deny, sync, wait for operator/Prometheus/Grafana, port-forwards.
+.PHONY: observability
+observability:
+	@echo "== observability bootstrap =="
+	@kubectl --context $(KUBECTX) get nodes >/dev/null 2>&1 || { echo "cluster not running — run: make cluster"; exit 1; }
+	@kubectl --context $(KUBECTX) -n skiperator-system patch cm namespace-exclusions --type merge -p '{"data":{"monitoring":"true"}}' >/dev/null 2>&1 || true
+	@argocd app sync k8s-apps >/dev/null 2>&1 || true
+	@kubectl --context $(KUBECTX) -n monitoring rollout status deploy/prometheus-operator --timeout=120s >/dev/null 2>&1 || { echo "prometheus-operator not ready"; exit 1; }
+	@kubectl --context $(KUBECTX) -n monitoring wait --for=condition=Available prometheus/prometheus-k8s --timeout=180s >/dev/null 2>&1 || echo "warn: Prometheus not Available yet (targets will appear shortly)"
+	@kubectl --context $(KUBECTX) -n monitoring rollout status deploy/grafana --timeout=120s >/dev/null 2>&1 || { echo "grafana not ready"; exit 1; }
+	@$(MAKE) pf-grafana
+	@echo "== observability: grafana http://127.0.0.1:3000 (admin/admin) · prometheus http://127.0.0.1:9090 =="
 
 .PHONY: status
 status:
