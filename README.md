@@ -25,9 +25,16 @@ kind cluster (arm64) → Skiperator CRs → operator (host binary) → k8s resou
 
 - `apps/` — GitOps-managed, one directory per ArgoCD app (`sample/`, `astronomy/{api.yaml,db/,infra/,ingest/}`, `observability/{base,platform,grafana}/`, `tools/`)
 - `argocd/` — helm values + root Application `k8s-apps.yaml` + `apps/*.yaml` (6 Applications)
-- `cluster/` — applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`
+- `cluster/` — applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`, `kyverno/` (SLSA attestation policy)
 - `testapp/` — UID-150 Go test app
 - `.github/workflows/` — `validate.yml` (kubeconform + yamllint) + `astro-digest-bump.yml` (cloud-driven digest bump)
+
+## SLSA supply-chain
+
+The astronomy image loop is SLSA-hardened at three layers (all verified end-to-end):
+1. **Producer (astronomy CI):** the merged multi-arch image is attested with SLSA build provenance + an SPDX SBOM (`actions/attest`, `push-to-registry`), and verified before dispatch.
+2. **Consumer gate (k8s-research `astro-digest-bump.yml`):** a digest is only committed if the GitHub attestations API returns a valid SLSA provenance for it.
+3. **In-cluster (Kyverno `ImageValidatingPolicy`, `cluster/kyverno/`):** a pod running an unattested `ghcr.io/toreau/astronomy-api*` image is denied at admission (`verifyAttestationSignatures`, cosign keyless). Bootstrap with `make kyverno`.
 
 ## Quick start
 
