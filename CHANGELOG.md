@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-25 (Del 1–2 — cloud-driven GitOps)
+
+### Infrastructure & ops
+- **ArgoCD sources GitHub directly**: `repoURL` flipped from the local git daemon (`git://host.docker.internal:9418/k8s-research`) to `https://github.com/toreau/k8s-research.git` in all 7 Applications; the git daemon is retired (`make serve-git`/`git-stop` removed, AGENTS.md rewritten). Verified GitHub→ArgoCD auto-sync in both directions with zero local action (no git daemon). Fresh clusters now need `argocd repo add ... --password <token>` (private repo; token in `argocd-repo-secret`).
+- **Cluster rebuilt as arm64 (native)**: amd64-kind is blocked on Apple Silicon — containerd reports `seccomp is not supported` for every static pod under both QEMU and Rosetta (Rosetta already enabled + VM restarted). The image pipeline therefore needs multi-arch CI (matrix amd64+arm64 + merge) instead of amd64-only.
+- `sample` namespace is now GitOps-managed (`apps/sample/namespace.yaml`) — fresh clusters lacked it, so `sample-apps` sync failed.
+- Istio gateway cert RBAC is now a **cluster-scoped** ClusterRole/ClusterRoleBinding (`gateway-cert-reader`) — the old sample-only Role made SDS never deliver the gateway TLS secrets.
+
+### Bugs fixed
+- Fresh-cluster gotchas (reproducible on every `kind delete` + rebuild): Skiperator's namespace controller default-denies new namespaces (`argocd`, `monitoring`) before they reach `namespace-exclusions` — delete the stale `default-deny` NetPol after patching the ConfigMap. MetalLB hands `172.21.255.200` to the default `istio-system/istio-ingressgateway` first — patch it to ClusterIP so the custom `istio-gateways/istio-ingress-external` gets the IP.
+- `/tmp/local-ca.crt` is cluster-specific and must be re-extracted after a rebuild (kubectl jsonpath needs an escaped dot: `{.data.ca\.crt}`); a stale CA makes `astronomy-verify` fail with "unable to get local issuer certificate".
+- `astronomy-api` caches kernel/catalog state at startup — after ingest completes, the Deployment must be restarted before `/health/ready` reports `kernels/starCatalog: ok`.
+- NAIF/JPL hosts (`naif.jpl.nasa.gov`, `ssd.jpl.nasa.gov`) were unreachable during ingest (also from the host); base kernels (`naif0012.tls`, `pck00010.tpc`) were fetched from the reachable GitHub mirror `arturania/cspice` into the PVC hostPath.
+
 ## 2026-08-25
 
 ### Infrastructure & ops
