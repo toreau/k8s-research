@@ -1,0 +1,39 @@
+name: astro-digest-bump
+
+on:
+  repository_dispatch:
+    types: [astro-image-pushed]
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bump api.yaml digest
+        id: update
+        env:
+          DIGEST: ${{ github.event.client_payload.digest }}
+          SHA: ${{ github.event.client_payload.sha }}
+        run: |
+          f=apps/astronomy/api.yaml
+          sed -i -E "s#(image: ghcr.io/toreau/astronomy-api@sha256:)[0-9a-f]{64}#\1${DIGEST}#" "$f"
+          if git diff --quiet "$f"; then
+            echo "digest unchanged, nothing to commit"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "new image line: $(grep 'image:' "$f" | head -1)"
+          fi
+      - name: Commit + push
+        if: steps.update.outputs.changed == 'true'
+        env:
+          DIGEST: ${{ github.event.client_payload.digest }}
+          SHA: ${{ github.event.client_payload.sha }}
+        run: |
+          git config user.name "k8s-research bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add apps/astronomy/api.yaml
+          git commit -m "astronomy: bump api digest to ${DIGEST:0:12} (sha ${SHA:0:7})"
+          git push
