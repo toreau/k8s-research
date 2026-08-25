@@ -16,6 +16,12 @@ spec:
     - path: /stats/prometheus
       interval: 30s
       relabelings:
+        # istio injects the proxy as a (native sidecar) init container — the
+        # operator emits one target per container, all mapping to the pod IP.
+        # Keep only the istio-proxy container to avoid 3x duplicate scrapes.
+        - sourceLabels: [__meta_kubernetes_pod_container_name]
+          action: keep
+          regex: istio-proxy
         - sourceLabels: [__meta_kubernetes_pod_ip]
           action: replace
           targetLabel: __address__
