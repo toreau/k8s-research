@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-25 (Documentation refresh — Del A–E)
+
+### Documentation
+- `README.md` rewritten as a clean current-state doc (GitHub ArgoCD source, cloud-driven multi-arch loop, arm64 cluster, no git daemon/local build/watcher) — `f170e04`.
+- Docmost `Projects/k8s-research` main page rewritten current-state (Del 1–4 notes folded in): GitHub source + token, cloud-driven loop, fresh-cluster gotchas, updated astronomy table.
+- Docmost `Projects/k8s-research/Decisions & gotchas` updated: repo-server behind **GitHub**-HEAD, multi-arch CI flow, new fresh-cluster subsection, `sha256:`-prefix digest trap, GITHUB_TOKEN no-CI-loop.
+- Docmost Norwegian k8s manual updated throughout: git daemon → GitHub source (`argocd repo add`), GitOps loop = commit+push, `make operator pf`, astronomy image via cloud-driven loop, new «Fase 8 — sky-drevet bilde-løkke», fresh-cluster gotchas.
+- Final sweep clean: the only repo matches for legacy terms are the intentional "No local git daemon" statements; legacy references survive only in historical work logs / this changelog.
+- New consolidated work log: Docmost `Work Logs/2026-08-25 k8s-research documentation refresh (Del A–E)`.
+
 ## 2026-08-25 (Del 4 — Mac-local image tooling removed)
 
 ### Infrastructure & ops
