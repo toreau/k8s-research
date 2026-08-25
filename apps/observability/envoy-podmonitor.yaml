@@ -8,7 +8,7 @@ metadata:
 spec:
   selector:
     matchExpressions:
-      - key: sidecar.istio.io/inject
+      - key: service.istio.io/canonical-name
         operator: Exists
   namespaceSelector:
     any: true
