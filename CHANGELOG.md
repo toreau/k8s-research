@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-25 (SLSA-3 — digest-bump verification gate)
+
+### Infrastructure & ops
+- **`astro-digest-bump.yml` verifies the SLSA attestation before committing** the digest bump: it queries `GET /repos/{owner}/{repo}/attestations/{sha256:<digest>}` (GitHub attestations REST API — **no registry auth needed**) and requires ≥1 attestation including the `https://slsa.dev/provenance/v1` predicate. A digest without an attestation fails the job → **no commit**. Full signature verification already runs producer-side in the astronomy CI (SLSA-1); in-cluster cosign enforcement is SLSA-4.
+- **Learned:** `gh attestation verify oci://ghcr.io/toreau/astronomy-api@…` requires GHCR credentials for the private astronomy package (the `oci://` resolution hits the registry), even though the attestation itself lives in the public repo's attestations API — hence the REST-based gate.
+- Verified positive (attested `aa1ace8e` passes; no-op since already pinned) and negative (unattested `0d0cae` blocked, `api.yaml` unchanged).
+
 ## 2026-08-25 (Documentation refresh — Del A–E)
 
 ### Documentation
