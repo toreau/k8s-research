@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-25 (Del 4 — Mac-local image tooling removed)
+
+### Infrastructure & ops
+- **Local astronomy auto-update watcher removed entirely**: `scripts/astronomy-auto-update.sh`, the launchd agent (`no.aursand.astronomy-auto-update.plist` + template), the `make astronomy-auto-update*` targets and the `.astro-update/` state directory are deleted; the installed launchd plist is uninstalled. The image loop is fully cloud-driven (Del 3): push → CI multi-arch → dispatch → digest bump → ArgoCD auto-sync.
+- **`make astronomy-image` removed** (local arm64 build + multi-arch merge) — CI does the multi-arch build/merge now. Unused `ASTRONOMY_DIR`/`ASTRONOMY_IMAGE` Makefile vars dropped; `ghcr-login`/`testapp-image` kept. `make status` no longer tracks a watcher.
+- After Del 4 the Mac only participates in the demo loop as the kind-cluster host (cluster, operator, port-forwards) — no local build or GitOps-side process.
+
 ## 2026-08-25 (Del 3 — cloud-driven multi-arch image loop)
 
 ### Core
