@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-25 (Del 3 — cloud-driven multi-arch image loop)
+
+### Core
+- **Fully cloud-driven astronomy image loop** (no Mac involvement): push to `astronomy.aursand.no` `main` → CI builds **multi-arch** (matrix amd64 `ubuntu-latest` + arm64 `ubuntu-24.04-arm` — arm64 hosted runner confirmed available) → `merge` job combines the manifest (`main-<sha>`, `latest`) via `buildx imagetools create` → resolves the manifest digest → dispatches `astro-image-pushed` (`{sha, digest}`) to k8s-research → new `astro-digest-bump.yml` workflow bumps the digest in `apps/astronomy/api.yaml` (only that file) → ArgoCD auto-syncs from GitHub → Skiperator rolls the cluster. Cross-repo auth: `K8S_RESEARCH_PAT` secret in the astronomy repo (dispatch; currently the `gh auth token`); bump commits push with GITHUB_TOKEN (no CI re-trigger).
+- The astronomy CI is no longer amd64-only; per-arch tags (`main-<sha>-{amd64,arm64}`, `latest-{amd64,arm64}`) plus merged multi-arch tags are pushed. The Dockerfile was already multi-arch-ready (cspice `-m64` patch).
+- `make astronomy-image` (local arm64 build + merge) and the local auto-update watcher are now **obsolete** and scheduled for removal in Del 4.
+
+### Bugs fixed
+- `astro-digest-bump.yml` double-prefixed the digest: `imagetools inspect --format '{{.Manifest.Digest}}'` returns `sha256:<hex>` while the sed capture group already included `sha256:` → `api.yaml` got `sha256:sha256:…`. Fixed by stripping the `sha256:` prefix from the payload digest before substitution; the malformed `api.yaml` (commit `c171279`) was corrected in `eb3bca6`.
+
 ## 2026-08-25 (Del 1–2 — cloud-driven GitOps)
 
 ### Infrastructure & ops
