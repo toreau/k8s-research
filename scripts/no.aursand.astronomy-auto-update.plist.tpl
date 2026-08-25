@@ -15,7 +15,7 @@
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/tmp/astronomy-auto-update.log</string>
-  <key>StandardErrorPath</key><string>/tmp/astronomy-auto-update.err.log</string>
+  <key>StandardOutPath</key><string>/tmp/astronomy-auto-update.stdout</string>
+  <key>StandardErrorPath</key><string>/tmp/astronomy-auto-update.stderr</string>
 </dict>
 </plist>
