@@ -18,9 +18,6 @@ skiperator-webhook-certs*/
 # Astronomy demo local secrets (never commit)
 .env.astronomy
 
-# astronomy-auto-update watcher state (never commit)
-.astro-update/
-
 # Editors
 .idea/
 .vscode/
