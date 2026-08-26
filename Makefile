@@ -28,6 +28,7 @@ help:
 	@echo "  make astronomy-verify   smoke-test the astronomy demo (fail-fast)"
 	@echo "  make observability   bootstrap Prometheus+Grafana (exclusions, sync, pf-grafana)"
 	@echo "  make policy-controller  bootstrap Sigstore Policy Controller + GitHub trust-policies (attestation enforcement)"
+	@echo "  make protect-main    protect main: require PRs + validate/argocd/gate-pr checks + 1 review"
 	@echo "  make pf-grafana      port-forwards: Grafana 3000, Prometheus 9090"
 
 .PHONY: cluster
@@ -108,6 +109,13 @@ policy-controller:
 	@kubectl --context $(KUBECTX) -n artifact-attestations rollout status deploy/policy-controller-webhook --timeout=120s >/dev/null 2>&1 || { echo "policy-controller-webhook not ready"; exit 1; }
 	@kubectl --context $(KUBECTX) -n artifact-attestations get trustroot github -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -q True || { echo "trustroot github not Ready"; exit 1; }
 	@echo "== policy-controller: webhook Running + TrustRoot Ready, enforcement on astronomy =="
+
+# Protect main (GitOps guardrails): require PRs with the validate-apps/validate-argocd/
+# gate-pr checks + 1 review before merge. Idempotent PUT; needs `gh` authenticated.
+# enforce_admins=false so the admin can still hotfix main directly.
+.PHONY: protect-main
+protect-main:
+	@./scripts/protect-main.sh
 
 # Sync all ArgoCD apps: parent first, then the 6 apps in dependency order
 # (astronomy; observability-base before prometheus-platform so the monitoring
