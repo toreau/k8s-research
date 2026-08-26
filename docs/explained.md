@@ -96,6 +96,36 @@ Før vi følger reisen: her er alle verktøyene som er involvert og hvilken roll
 
 Vi følger **én ekte push** (`7437db6` i astronomy-repoet) gjennom hele kjeden. Alle stegene er verifisert end-to-end i dette prosjektet.
 
+### Appens reise (hvor er appen, og hvilken status?)
+
+Diagrammet viser applikasjonens sted og status i hvert steg. Pilene er det som «flytter» den videre.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> S0: utvikler pusher til main
+    S0: 0. Git (astronomy.aursand.no)<br/>Status: committet, pushet
+    S0 --> S1: GitHub Actions starter
+    S1: 1. CI-bygg (GitHub Actions)<br/>Status: bygger amd64 + arm64
+    S1 --> S2: image publisert
+    S2: 2. GHCR (container-register)<br/>Status: multi-arch manifest, digest satt
+    S2 --> S3: attestasjons-steg
+    S3: 3. Attestasjon (SLSA + SBOM)<br/>Status: signert (keyless), verifisert produsent-side
+    S3 --> S4: dispatch sendt
+    S4: 4. Dispatch (hendelse)<br/>Status: «nytt bilde» meldt til k8s-research
+    S4 --> S5: workflow kjører
+    S5: 5. Gaten (astro-digest-bump)<br/>Status: attestasjon sjekket, digest-bump committet
+    S5 --> S6: git endret
+    S6: 6. ArgoCD (GitOps)<br/>Status: synkroniserer, deployer
+    S6 --> S7: Deployment
+    S7: 7. Kubernetes + Skiperator<br/>Status: pod-er opprettet (rollout)
+    S7 --> S8: pod foreslått til admission
+    S8: 8. Kyverno (admission)<br/>Status: attestasjon verifisert, eller pod nektet
+    S8 --> S9: godkjent
+    S9: 9. Kjører<br/>Status: pod-er i live, prober grønne, verify ALL OK
+    S9 --> [*]
+```
+
 ### Steg 0: git og «push til main»
 
 Git er et versjonskontrollsystem: en historie over endringer i tekstfiler. `main` er hovedgrenen («den versjonen som gjelder»). Å pushe betyr å laste opp endringene til GitHub, slik at alle (og alle automatiserte systemer) kan se dem.
