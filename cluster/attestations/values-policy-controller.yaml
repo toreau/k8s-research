@@ -1,0 +1,3 @@
+# Sigstore Policy Controller helm values (cluster/attestations, applied via
+# `make policy-controller`). Chart defaults are fine for this cluster.
+# Install: oci://ghcr.io/sigstore/helm-charts/policy-controller, v0.10.5

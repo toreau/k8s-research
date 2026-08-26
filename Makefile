@@ -27,7 +27,7 @@ help:
 	@echo "  make astronomy-cert     copy the app TLS secret from istio-gateways into astronomy"
 	@echo "  make astronomy-verify   smoke-test the astronomy demo (fail-fast)"
 	@echo "  make observability   bootstrap Prometheus+Grafana (exclusions, sync, pf-grafana)"
-	@echo "  make kyverno         bootstrap Kyverno SLSA attestation policy (helm + regcred + IVP)"
+	@echo "  make policy-controller  bootstrap Sigstore Policy Controller + GitHub trust-policies (attestation enforcement)"
 	@echo "  make pf-grafana      port-forwards: Grafana 3000, Prometheus 9090"
 
 .PHONY: cluster
@@ -87,21 +87,22 @@ observability:
 	@$(MAKE) pf-grafana
 	@echo "== observability: grafana http://127.0.0.1:3000 (admin/admin) · prometheus http://127.0.0.1:9090 =="
 
-.PHONY: kyverno
-kyverno:
-	@echo "== kyverno bootstrap (SLSA attestation policy) =="
+.PHONY: policy-controller
+policy-controller:
+	@echo "== policy-controller bootstrap (SLSA attestation enforcement) =="
 	@kubectl --context $(KUBECTX) get nodes >/dev/null 2>&1 || { echo "cluster not running — run: make cluster"; exit 1; }
-	@kubectl --context $(KUBECTX) -n skiperator-system patch cm namespace-exclusions --type merge -p '{"data":{"kyverno":"true"}}' >/dev/null 2>&1 || true
-	@kubectl --context $(KUBECTX) -n kyverno delete networkpolicy default-deny --ignore-not-found >/dev/null 2>&1 || true
-	@kubectl --context $(KUBECTX) -n kyverno get deploy kyverno-admission-controller >/dev/null 2>&1 || { \
-		helm repo add kyverno https://kyverno.github.io/kyverno >/dev/null 2>&1; helm repo update kyverno >/dev/null 2>&1; \
-		helm install kyverno kyverno/kyverno -n kyverno --create-namespace -f cluster/kyverno/values.yaml; }
-	@kubectl --context $(KUBECTX) -n kyverno get secret regcred >/dev/null 2>&1 || { \
-		test -n "$$GHCR_TOKEN" || { echo "set GHCR_TOKEN (ghcr.io read token) to create regcred"; exit 1; }; \
-		kubectl --context $(KUBECTX) -n kyverno create secret docker-registry regcred \
-			--docker-server=ghcr.io --docker-username=toreau --docker-password="$$GHCR_TOKEN"; }
-	@kubectl --context $(KUBECTX) apply -f cluster/kyverno/require-astronomy-attestation.yaml
-	@echo "== kyverno: ImageValidatingPolicy require-astronomy-attestation applied =="
+	@kubectl --context $(KUBECTX) -n skiperator-system patch cm namespace-exclusions --type merge -p '{"data":{"artifact-attestations":"true"}}' >/dev/null 2>&1 || true
+	@kubectl --context $(KUBECTX) -n artifact-attestations delete networkpolicy default-deny --ignore-not-found >/dev/null 2>&1 || true
+	@helm upgrade policy-controller --install --atomic --create-namespace -n artifact-attestations \
+		oci://ghcr.io/sigstore/helm-charts/policy-controller --version 0.10.5 \
+		-f cluster/attestations/values-policy-controller.yaml
+	@helm upgrade trust-policies --install --atomic -n artifact-attestations \
+		oci://ghcr.io/github/artifact-attestations-helm-charts/trust-policies --version v0.7.0 \
+		-f cluster/attestations/values-trust-policies.yaml
+	@kubectl --context $(KUBECTX) label ns astronomy policy.sigstore.dev/include=true --overwrite >/dev/null 2>&1 || true
+	@kubectl --context $(KUBECTX) -n artifact-attestations rollout status deploy/policy-controller-webhook --timeout=120s >/dev/null 2>&1 || { echo "policy-controller-webhook not ready"; exit 1; }
+	@kubectl --context $(KUBECTX) -n artifact-attestations get trustroot github -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -q True || { echo "trustroot github not Ready"; exit 1; }
+	@echo "== policy-controller: webhook Running + TrustRoot Ready, enforcement on astronomy =="
 
 # Sync all ArgoCD apps: parent first, then the 6 apps in dependency order
 # (astronomy; observability-base before prometheus-platform so the monitoring

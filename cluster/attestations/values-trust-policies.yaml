@@ -1,0 +1,17 @@
+# GitHub artifact-attestations trust-policies chart values
+# (oci://ghcr.io/github/artifact-attestations-helm-charts/trust-policies, v0.7.0).
+# Enforces SLSA-provenance attestations (signed by the container-merge-attest
+# reusable workflow in toreau/gh-workflows) on ghcr.io/toreau/astronomy-api
+# images, in namespaces labeled policy.sigstore.dev/include=true (astronomy).
+# `policy.images` is an explicit allowlist; the exempt policy covers the istio
+# init/proxy images (registry.istio.io proxyv2) used in astronomy pods.
+# `trust.github` + `trust.sigstorePublic` stay true (default): the GitHub
+# trust-root authority does not yet verify our rekor-logged bundles, so the
+# public-good authority does the actual enforcement (S1 finding).
+policy:
+  enabled: true
+  subjectRegExp: '^https://github\.com/toreau/gh-workflows/\.github/workflows/container-merge-attest\.yml@refs/tags/v1$'
+  images:
+    - "ghcr.io/toreau/astronomy-api**"
+  exemptImages:
+    - "registry.istio.io/release/proxyv2**"
