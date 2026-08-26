@@ -10,7 +10,7 @@
 # public-good authority does the actual enforcement (S1 finding).
 policy:
   enabled: true
-  subjectRegExp: '^https://github\.com/toreau/gh-workflows/\.github/workflows/container-merge-attest\.yml@refs/tags/v1$'
+  subjectRegExp: '^https://github\\.com/toreau/gh-workflows/\\.github/workflows/container-merge-attest\\.yml@refs/tags/v1$'
   images:
     - "ghcr.io/toreau/astronomy-api**"
   exemptImages:

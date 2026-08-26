@@ -93,12 +93,17 @@ policy-controller:
 	@kubectl --context $(KUBECTX) get nodes >/dev/null 2>&1 || { echo "cluster not running — run: make cluster"; exit 1; }
 	@kubectl --context $(KUBECTX) -n skiperator-system patch cm namespace-exclusions --type merge -p '{"data":{"artifact-attestations":"true"}}' >/dev/null 2>&1 || true
 	@kubectl --context $(KUBECTX) -n artifact-attestations delete networkpolicy default-deny --ignore-not-found >/dev/null 2>&1 || true
-	@helm upgrade policy-controller --install --atomic --create-namespace -n artifact-attestations \
-		oci://ghcr.io/sigstore/helm-charts/policy-controller --version 0.10.5 \
-		-f cluster/attestations/values-policy-controller.yaml
-	@helm upgrade trust-policies --install --atomic -n artifact-attestations \
-		oci://ghcr.io/github/artifact-attestations-helm-charts/trust-policies --version v0.7.0 \
-		-f cluster/attestations/values-trust-policies.yaml
+	# Install only if absent: a re-run of `helm upgrade` on an existing install
+	# conflicts on the webhook namespaceSelector (the policy-controller's Knative
+	# reconciler owns that field), so the charts are treated as install-once.
+	@helm status policy-controller -n artifact-attestations 2>/dev/null | grep -q 'STATUS: deployed' || \
+		helm upgrade policy-controller --install --create-namespace -n artifact-attestations \
+			oci://ghcr.io/sigstore/helm-charts/policy-controller --version 0.10.5 \
+			-f cluster/attestations/values-policy-controller.yaml
+	@helm status trust-policies -n artifact-attestations 2>/dev/null | grep -q 'STATUS: deployed' || \
+		helm upgrade trust-policies --install -n artifact-attestations \
+			oci://ghcr.io/github/artifact-attestations-helm-charts/trust-policies --version v0.7.0 \
+			-f cluster/attestations/values-trust-policies.yaml
 	@kubectl --context $(KUBECTX) label ns astronomy policy.sigstore.dev/include=true --overwrite >/dev/null 2>&1 || true
 	@kubectl --context $(KUBECTX) -n artifact-attestations rollout status deploy/policy-controller-webhook --timeout=120s >/dev/null 2>&1 || { echo "policy-controller-webhook not ready"; exit 1; }
 	@kubectl --context $(KUBECTX) -n artifact-attestations get trustroot github -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -q True || { echo "trustroot github not Ready"; exit 1; }
