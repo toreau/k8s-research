@@ -131,6 +131,7 @@ status:
 	@echo "== operator =="; pgrep -f 'bin/skiperator' >/dev/null && echo "running" || echo "stopped"
 	@echo "== port-forwards =="; lsof -i :8081 -sTCP:LISTEN >/dev/null 2>&1 && echo "argocd 8081 up" || echo "argocd 8081 down"; lsof -i :8443 -sTCP:LISTEN >/dev/null 2>&1 && echo "istio 8443 up" || echo "istio 8443 down"
 	@echo "== argo apps =="; kubectl -n argocd get applications -o custom-columns='NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status' 2>/dev/null || echo "n/a"
+	@echo "== attestations =="; kubectl --context $(KUBECTX) -n artifact-attestations get deploy policy-controller-webhook --no-headers 2>/dev/null | awk '{print "webhook ready " $$2" ("$$1")"}' | grep . || echo "webhook n/a"; kubectl --context $(KUBECTX) -n artifact-attestations get trustroot github -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}{"\n"}' 2>/dev/null | grep . | sed 's/^/trustroot ready: /' || echo "trustroot n/a"; kubectl --context $(KUBECTX) get ns astronomy -o jsonpath='{.metadata.labels.policy\.sigstore\.dev\/include}{"\n"}' 2>/dev/null | grep . | sed 's/^/astronomy include: /' || echo "astronomy include n/a"
 
 .PHONY: cluster-delete
 cluster-delete:
