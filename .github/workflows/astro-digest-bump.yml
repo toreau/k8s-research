@@ -21,6 +21,7 @@ jobs:
     needs: gate
     uses: toreau/gh-workflows/.github/workflows/digest-bump.yml@v1
     with:
+      file-path: "apps/astronomy/api.yaml"
       file-paths: "apps/astronomy/api.yaml apps/astronomy/ingest/ingest-datasets.yaml apps/astronomy/ingest/ingest-naif.yaml apps/astronomy/ingest/ingest-omm.yaml"
       image-prefix: "image: ghcr.io/toreau/astronomy-api@sha256:"
       digest: ${{ github.event.client_payload.digest }}
