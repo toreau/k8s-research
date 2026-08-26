@@ -1,6 +1,6 @@
 # k8s-research
 
-Local Kubernetes testing stack on a MacBook Pro (Apple Silicon / arm64 / macOS): **kind** + **Skiperator** (Kartverket's operator) + **ArgoCD** (GitOps). The cluster is a throwaway local environment, and the deployment loop is **fully cloud-driven** — the Mac only hosts the cluster, the operator and port-forwards.
+Local Kubernetes testing stack on a MacBook Pro (Apple Silicon / arm64 / macOS): **kind** + **Skiperator** (Kartverket's operator) + **ArgoCD** (GitOps). The cluster is a throwaway local environment, and the deployment loop is **fully cloud-driven**; the Mac only hosts the cluster, the operator and port-forwards.
 
 Full detail, key commands and gotchas: **`AGENTS.md`**. Build history: Docmost `Work Logs/2026-08-24 Phase 0` … `2026-08-25 Del 1–4` and the repo `CHANGELOG.md`.
 
@@ -11,23 +11,23 @@ astronomy.aursand.no (git) ──CI (multi-arch matrix + manifest merge)──�
         │ 2. dispatch astro-image-pushed {sha, digest}
         ▼
 k8s-research (git, GitHub) ──astro-digest-bump.yml──► digest bump in apps/astronomy/api.yaml
-        │ ArgoCD (auto-sync + self-heal) — source = GitHub (private, token)
+        │ ArgoCD (auto-sync + self-heal); source = GitHub (private, token)
         ▼
 kind cluster (arm64) → Skiperator CRs → operator (host binary) → k8s resources
 ```
 
 - Cluster `kind-skiperator` (k8s **1.34.3**, single node, native **arm64**).
 - Istio **1.30.3** (istiod + custom external ingress gateway), cert-manager **1.21.1** (local CA), MetalLB **0.16.1** (external LB `172.21.255.200`), ArgoCD **10.4.0** (helm), metrics-server **0.9.0**, Skiperator **v2.18.0** (host binary).
-- ArgoCD is **app-of-apps**: root `k8s-apps` (path `argocd/apps`) manages 6 Applications — `astronomy`, `prometheus-platform`, `observability-base`, `grafana`, `cert-sync`, `sample-apps` (7 apps total). Source is the **private GitHub repo** `toreau/k8s-research` (token in `argocd-repo-secret`, added via `argocd repo add`). No local git daemon.
+- ArgoCD is **app-of-apps**: root `k8s-apps` (path `argocd/apps`) manages 6 Applications: `astronomy`, `prometheus-platform`, `observability-base`, `grafana`, `cert-sync`, `sample-apps` (7 apps total). Source is the **private GitHub repo** `toreau/k8s-research` (token in `argocd-repo-secret`, added via `argocd repo add`). No local git daemon.
 - **Astronomy image loop (cloud-driven)**: push to `astronomy.aursand.no` `main` → CI builds **multi-arch** (amd64 + arm64 matrix) → merges the manifest (`main-<sha>`, `latest`) → dispatches `astro-image-pushed` `{sha, digest}` → `astro-digest-bump.yml` bumps the digest in `apps/astronomy/api.yaml` (only that file) → ArgoCD auto-syncs from GitHub → the cluster rolls. No Mac involvement beyond hosting the cluster.
 
 ## Repo layout
 
-- `apps/` — GitOps-managed, one directory per ArgoCD app (`sample/`, `astronomy/{api.yaml,db/,infra/,ingest/}`, `observability/{base,platform,grafana}/`, `tools/`)
-- `argocd/` — helm values + root Application `k8s-apps.yaml` + `apps/*.yaml` (6 Applications)
-- `cluster/` — applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`, `kyverno/` (SLSA attestation policy)
-- `testapp/` — UID-150 Go test app
-- `.github/workflows/` — `validate.yml` (kubeconform + yamllint) + `astro-digest-bump.yml` (cloud-driven digest bump)
+- `apps/`: GitOps-managed, one directory per ArgoCD app (`sample/`, `astronomy/{api.yaml,db/,infra/,ingest/}`, `observability/{base,platform,grafana}/`, `tools/`)
+- `argocd/`: helm values + root Application `k8s-apps.yaml` + `apps/*.yaml` (6 Applications)
+- `cluster/`: applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`, `kyverno/` (SLSA attestation policy)
+- `testapp/`: UID-150 Go test app
+- `.github/workflows/`: `validate.yml` (kubeconform + yamllint) + `astro-digest-bump.yml` (cloud-driven digest bump)
 
 ## SLSA supply-chain
 
@@ -36,9 +36,9 @@ The astronomy image loop is SLSA-hardened at three layers (all verified end-to-e
 2. **Consumer gate (k8s-research `astro-digest-bump.yml`):** a digest is only committed if the GitHub attestations API returns a valid SLSA provenance for it.
 3. **In-cluster (Kyverno `ImageValidatingPolicy`, `cluster/kyverno/`):** a pod running an unattested `ghcr.io/toreau/astronomy-api*` image is denied at admission (`verifyAttestationSignatures`, cosign keyless). Bootstrap with `make kyverno`.
 
-> **Verification split:** the consumer gate is a *lightweight* check — it verifies only that an attestation exists with an SLSA-provenance predicate (keeping unattested digests out of git). Cryptographic signature verification happens **producer-side** (`gh attestation verify` in the astronomy CI, at build time) and **in-cluster** (Kyverno `verifyAttestationSignatures`, fail-closed at admission).
+> **Verification split:** the consumer gate is a *lightweight* check: it verifies only that an attestation exists with an SLSA-provenance predicate (keeping unattested digests out of git). Cryptographic signature verification happens **producer-side** (`gh attestation verify` in the astronomy CI, at build time) and **in-cluster** (Kyverno `verifyAttestationSignatures`, fail-closed at admission).
 
-> **Lær flyten:** [`docs/explained.md`](docs/explained.md) — norsk, pedagogisk gjennomgang av hele kjeden (git push → CI → attestasjon → gate → ArgoCD → Kyverno → rollout), skrevet for utviklere uten DevOps-bakgrunn.
+> **Lær flyten:** [`docs/explained.md`](docs/explained.md): norsk, pedagogisk gjennomgang av hele kjeden (git push → CI → attestasjon → gate → ArgoCD → Kyverno → rollout), skrevet for utviklere uten DevOps-bakgrunn.
 
 ## Quick start
 

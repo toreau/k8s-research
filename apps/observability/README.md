@@ -1,7 +1,7 @@
-# Observability — delt plattform
+# Observability: delt plattform
 
 Prometheus + Grafana er en **delt, app-agnostisk plattform** i `monitoring`-navnerommet.
-Alle ArgoCD-apper her er generiske (`observability-base`, `prometheus-platform`, `grafana`) — ingen
+Alle ArgoCD-apper her er generiske (`observability-base`, `prometheus-platform`, `grafana`); ingen
 er bundet til en bestemt applikasjon.
 
 ## Slik onboards en ny app
@@ -10,7 +10,7 @@ er bundet til en bestemt applikasjon.
 2. **Sidecar-metrikker (envoy):** skrapes automatisk for alle istio-injiserte pods
    (`prometheus-platform`/envoy-PodMonitor matcher `service.istio.io/canonical-name`
    klynge-vidt). App-navnerommet må imidlertid tillate inngående 15090 fra
-   `monitoring` — default-deny (Skiperator) blokkerer ellers. Legg til en NetPol:
+   `monitoring`, for default-deny (Skiperator) blokkerer ellers. Legg til en NetPol:
    ```yaml
    apiVersion: networking.k8s.io/v1
    kind: NetworkPolicy
@@ -29,7 +29,7 @@ er bundet til en bestemt applikasjon.
    ```
    (Se `apps/astronomy/infra/allow-prometheus-envoy.yaml` og `apps/sample/allow-prometheus-envoy.yaml`.)
 3. **App-egne metrikker** (`/metrics`): legg til en ServiceMonitor/PodMonitor med
-   label **`app.kubernetes.io/name: observability`** i app-navnerommet — da skrapes den
+   label **`app.kubernetes.io/name: observability`** i app-navnerommet; da skrapes den
    av `prometheus`. Tilsvarende NetPol for metrikk-porten hvis navnerommet er default-denied.
 4. **Dashboards:** provisionert ConfigMap under `apps/observability/grafana/dashboards/`,
    eller via Grafana-UI.
