@@ -2,8 +2,8 @@
 
 Håndhever SLSA-attestasjoner ved admission for `ghcr.io/toreau/astronomy-api*`-bilder
 i namespace-et `astronomy` (label `policy.sigstore.dev/include=true`), verifisert mot
-GitHub-artifact-attestasjoner signert av `container-merge-attest`-workflow-en i
-`toreau/gh-workflows`. Bootstrap: `make policy-controller`.
+GitHub-artifact-attestasjoner signert av astronomy-`ci.yml`-workflow-en
+(`toreau/astronomy.aursand.no`). Bootstrap: `make policy-controller`.
 
 ## Komponenter
 
@@ -30,8 +30,10 @@ GitHub-artifact-attestasjoner signert av `container-merge-attest`-workflow-en i
 
 - **Nytt bilde i astronomy-ns:** legg det til `policy.exemptImages` (hvis det ikke skal attest-verifiseres),
   eller sørg for at det er attestet hvis det matcher `policy.images`.
-- **Ny signer-identitet** (f.eks. tag-bump til `v2`): oppdater `subjectRegExp`, fjern/reinstall
-  trust-policies bevisst (`helm uninstall trust-policies -n artifact-attestations` + `make policy-controller`).
+- **Ny signer-identitet** (f.eks. astronomy-`ci.yml` renames/flyttes, eller tag-bump): oppdater
+  `subjectRegExp` og re-apply med `make trust-policies-values` (eksplisitt `helm upgrade trust-policies`,
+  u-gated — konflikten på webhook-`namespaceSelector` gjelder kun policy-controller-releasen). Uninstall
+  + reinstall trengs kun ved CRD-død (se gotcha 2).
 
 ## Relatert
 

@@ -110,6 +110,18 @@ policy-controller:
 	@kubectl --context $(KUBECTX) -n artifact-attestations get trustroot github -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -q True || { echo "trustroot github not Ready"; exit 1; }
 	@echo "== policy-controller: webhook Running + TrustRoot Ready, enforcement on astronomy =="
 
+# Re-apply trust-policies values (e.g. after a subjectRegExp change). Unlike
+# `make policy-controller`, this is NOT install-once-gated: a plain `helm upgrade`
+# of the trust-policies release updates the TrustRoot/ClusterImagePolicy CRs and
+# does not touch the policy-controller webhook namespaceSelector.
+.PHONY: trust-policies-values
+trust-policies-values:
+	@helm upgrade trust-policies -n artifact-attestations \
+		oci://ghcr.io/github/artifact-attestations-helm-charts/trust-policies --version v0.7.0 \
+		-f cluster/attestations/values-trust-policies.yaml
+	@kubectl --context $(KUBECTX) -n artifact-attestations get clusterimagepolicy github-policy -o jsonpath='{range .spec.authorities[*].keyless.identities[*]}{.subjectRegExp}{"\n"}{end}' 2>/dev/null | sed 's/^/subjectRegExp now: /' || true
+	@echo "== trust-policies re-applied =="
+
 # Protect main (GitOps guardrails): require PRs with the validate-apps/validate-argocd/
 # gate-pr checks + 1 review before merge. Idempotent PUT; needs `gh` authenticated.
 # enforce_admins=false so the admin can still hotfix main directly.
