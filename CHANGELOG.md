@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-26 (CI hardening — actions by SHA + dependabot)
+
+### Infrastructure & ops
+- **GitHub Actions pinned by SHA** (supply-chain hardening): `actions/checkout` now referenced by commit SHA (tag kept as `# v4` comment) in `validate.yml` and `astro-digest-bump.yml`. New `.github/dependabot.yml` with the `github-actions` ecosystem (weekly, grouped) so action bumps arrive as reviewable PRs. `validate` CI verified green. `79bec91`.
+
 ## 2026-08-25 (docs audit — k8s-research + astronomy)
 
 ### Documentation
