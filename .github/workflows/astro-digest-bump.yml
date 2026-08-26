@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   gate:
-    uses: toreau/gh-workflows/.github/workflows/attestation-gate.yml@main
+    uses: toreau/gh-workflows/.github/workflows/attestation-gate.yml@v1
     with:
       owner-repo: "toreau/astronomy.aursand.no"
       digest: ${{ github.event.client_payload.digest }}
@@ -18,7 +18,7 @@ jobs:
 
   bump:
     needs: gate
-    uses: toreau/gh-workflows/.github/workflows/digest-bump.yml@main
+    uses: toreau/gh-workflows/.github/workflows/digest-bump.yml@v1
     with:
       file-path: "apps/astronomy/api.yaml"
       image-prefix: "image: ghcr.io/toreau/astronomy-api@sha256:"

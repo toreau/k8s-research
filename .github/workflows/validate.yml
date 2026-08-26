@@ -6,13 +6,13 @@ on:
 
 jobs:
   validate-apps:
-    uses: toreau/gh-workflows/.github/workflows/manifest-validate.yml@main
+    uses: toreau/gh-workflows/.github/workflows/manifest-validate.yml@v1
     with:
       paths: "apps/"
       schemas-dir: "ci/schemas"
 
   validate-argocd:
-    uses: toreau/gh-workflows/.github/workflows/manifest-validate.yml@main
+    uses: toreau/gh-workflows/.github/workflows/manifest-validate.yml@v1
     with:
       paths: "argocd/apps"
       yamllint-paths: "argocd/"
