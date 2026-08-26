@@ -38,6 +38,8 @@ The astronomy image loop is SLSA-hardened at three layers (all verified end-to-e
 
 > **Verification split:** the consumer gate is a *lightweight* check — it verifies only that an attestation exists with an SLSA-provenance predicate (keeping unattested digests out of git). Cryptographic signature verification happens **producer-side** (`gh attestation verify` in the astronomy CI, at build time) and **in-cluster** (Kyverno `verifyAttestationSignatures`, fail-closed at admission).
 
+> **Lær flyten:** [`docs/explained.md`](docs/explained.md) — norsk, pedagogisk gjennomgang av hele kjeden (git push → CI → attestasjon → gate → ArgoCD → Kyverno → rollout), skrevet for utviklere uten DevOps-bakgrunn.
+
 ## Quick start
 
 ```bash
