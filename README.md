@@ -9,14 +9,14 @@ astronomy.aursand.no (git) ──CI (multi-arch matrix + manifest merge)──�
         │ 2. dispatch astro-image-pushed {sha, digest}
         ▼
 k8s-research (git, GitHub) ──astro-digest-bump.yml──► opens PR (gate → PR checks → review → merge)
-        │ ArgoCD (auto-sync + self-heal); source = GitHub (private, token)
+        │ ArgoCD (auto-sync + self-heal); source = GitHub (public; token in argocd-repo-secret)
         ▼
 kind cluster (arm64) → Skiperator CRs → operator (host binary) → k8s resources
 ```
 
 - Cluster `kind-skiperator` (k8s **1.34.3**, single node, native **arm64**).
 - Istio **1.30.3** (istiod + custom external ingress gateway), cert-manager **1.21.1** (local CA), MetalLB **0.16.1** (external LB `172.21.255.200`), ArgoCD **10.4.0** (helm), metrics-server **0.9.0**, Skiperator **v2.18.0** (host binary).
-- ArgoCD is **app-of-apps**: root `k8s-apps` (path `argocd/apps`) manages 6 Applications: `astronomy`, `prometheus-platform`, `observability-base`, `grafana`, `cert-sync`, `sample-apps` (7 apps total). Source is the **private GitHub repo** `toreau/k8s-research` (token in `argocd-repo-secret`, added via `argocd repo add`). No local git daemon.
+- ArgoCD is **app-of-apps**: root `k8s-apps` (path `argocd/apps`) manages 6 Applications: `astronomy`, `prometheus-platform`, `observability-base`, `grafana`, `cert-sync`, `sample-apps` (7 apps total). Source is the **public GitHub repo** `toreau/k8s-research` (token in `argocd-repo-secret` is technically optional now, kept for compatibility; added via `argocd repo add`). No local git daemon.
 - **Astronomy image loop (cloud-driven)**: push to `astronomy.aursand.no` `main` → CI builds **multi-arch** (amd64 + arm64 matrix) → merges the manifest (`main-<sha>`, `latest`) → dispatches `astro-image-pushed` `{sha, digest}` → `astro-digest-bump.yml` gates the digest (attestation, fail-fast) and **opens a PR** (`bump/astronomy-api-{sha7}`) → PR checks (`validate-apps`, `validate-argocd`, `gate-pr`) → **manual review + merge** (branch protection) → ArgoCD auto-syncs from GitHub → the cluster rolls. No Mac involvement beyond hosting the cluster. Bump PRs have two human touchpoints: approve the bot's workflow runs, then review + merge.
 
 ## Repo layout
@@ -53,7 +53,7 @@ make protect-main  # branch protection on main (required checks + 1 review)
 - ArgoCD UI: http://127.0.0.1:8081 · admin pw: `/tmp/argocd-admin.txt`
 - HTTPS test: `curl --cacert /tmp/local-ca.crt --connect-to <host>:443:127.0.0.1:8443 https://<host>/` (CA from `cert-manager/local-test-ca`)
 - **GitOps change**: edit `apps/*` → push a branch + open a PR (**main is branch-protected**: required checks `validate-apps`/`validate-argocd`/`gate-pr` + 1 review; a single-user repo can't self-review, so merge with `gh pr merge --admin` or push directly as admin) → ArgoCD auto-syncs (or `make argo-sync` for an immediate manual sync).
-- **Fresh cluster**: `make cluster` → install ArgoCD (helm, `argocd/values.yaml`) → `argocd repo add https://github.com/toreau/k8s-research.git --username toreau --password <token>` (private repo) → `kubectl apply -f argocd/k8s-apps.yaml` → `make astronomy`.
+- **Fresh cluster**: `make cluster` → install ArgoCD (helm, `argocd/values.yaml`) → `argocd repo add https://github.com/toreau/k8s-research.git --username toreau --password <token>` (repo is **public**; token optional but kept) → `kubectl apply -f argocd/k8s-apps.yaml` → `make astronomy`.
 
 ## Verification cheat-sheet
 
