@@ -55,6 +55,41 @@ Alt dette skjer automatisk hver gang noen pusher. Utvikleren trenger ikke gjøre
 - **Kyverno (steg 7)** = dørvakten som også leser og verifiserer dokumentet før pakken får komme inn i huset.
 - **GitOps/ArgoCD (steg 6)** = arbeideren som hele tiden sjekker at huset matcher blåkopien (git).
 
+### De involverte verktøyene (rollekart)
+
+Før vi følger reisen: her er alle verktøyene som er involvert og hvilken rolle de har. Du trenger ikke huske alt — bruk tabellen som oppslag når et navn dukker opp i stegene.
+
+**Verts- og kode-laget**
+
+| Verktøy | Hva det er | Rolle i flyten |
+|---|---|---|
+| Git | Versjonskontroll | Historikken over endringer; «kilden til sannhet» (steg 0, 6) |
+| GitHub | Plattform som hoster repoer | Repoene, PR-er, attestasjons-API (overalt) |
+| GitHub Actions | CI/CD-tjeneste | Bygger, tester, attesterer og dispatcher (steg 1–4) |
+| GitHub-hosted runners | Byggemaskinene Actions kjører på | Isolerte byggemiljøer som GitHub administrerer (steg 1) |
+| Dependabot | Automatisk avhengighets-oppdaterer | Foreslår oppdateringer (avhengigheter + actions) som reviewbare PR-er |
+| GHCR | Container-register | Lagrer bildene og attestasjonene (steg 2–3) |
+| Sigstore/cosign | Signerings-verktøy (keyless) | Lager og verifiserer ekthetsattestene (steg 3, 8) |
+
+**Lokalt-kluster-laget (kind)**
+
+| Verktøy | Hva det er | Rolle i flyten |
+|---|---|---|
+| kind | Kubernetes-i-Docker | Kjører et lite k8s-kluster på Mac-en — selve testmiljøet |
+| Kubernetes (k8s) | Container-orkestrerer | Kjører og holder appen i live (steg 6–9) |
+| Skiperator | Operator | Oversetter enkle app-beskrivelser til fullt k8s-oppsett (steg 7) |
+| Istio | Service mesh | Nettverk, TLS og trafikk mellom tjenester |
+| cert-manager | Sertifikat-utsteder | Lager/fornyer TLS-sertifikater automatisk |
+| MetalLB | Lokal LoadBalancer | Gir klusteret en «ekstern» IP (via nip.io) |
+| metrics-server | Metrikk-API | Måler CPU/minne → autoskalering |
+
+**GitOps- og sikkerhets-laget**
+
+| Verktøy | Hva det er | Rolle i flyten |
+|---|---|---|
+| ArgoCD | GitOps-motor | Holder klusteret likt git; auto-sync + self-heal (steg 6) |
+| Kyverno | Policy-motor | Dørvakten som verifiserer attestasjonen før pod-en starter (steg 8) |
+
 ---
 
 ## 3. Reisen — steg for steg
