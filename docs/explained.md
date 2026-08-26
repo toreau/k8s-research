@@ -102,7 +102,6 @@ Diagrammet viser applikasjonens sted og status i hvert steg. Pilene er det som Â
 
 ```mermaid
 stateDiagram-v2
-    direction LR
     [*] --> S0: utvikler pusher til main
     S0: 0. Git (astronomy.aursand.no)<br/>Status: committet, pushet
     S0 --> S1: GitHub Actions starter
