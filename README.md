@@ -8,7 +8,7 @@ Local Kubernetes testing stack on a MacBook Pro (Apple Silicon / arm64 / macOS):
 astronomy.aursand.no (git) ──CI (multi-arch matrix + manifest merge)──► GHCR
         │ 2. dispatch astro-image-pushed {sha, digest}
         ▼
-k8s-research (git, GitHub) ──astro-digest-bump.yml──► digest bump in apps/astronomy/api.yaml
+k8s-research (git, GitHub) ──astro-digest-bump.yml──► opens PR (gate → PR checks → review → merge)
         │ ArgoCD (auto-sync + self-heal); source = GitHub (private, token)
         ▼
 kind cluster (arm64) → Skiperator CRs → operator (host binary) → k8s resources
@@ -17,7 +17,7 @@ kind cluster (arm64) → Skiperator CRs → operator (host binary) → k8s resou
 - Cluster `kind-skiperator` (k8s **1.34.3**, single node, native **arm64**).
 - Istio **1.30.3** (istiod + custom external ingress gateway), cert-manager **1.21.1** (local CA), MetalLB **0.16.1** (external LB `172.21.255.200`), ArgoCD **10.4.0** (helm), metrics-server **0.9.0**, Skiperator **v2.18.0** (host binary).
 - ArgoCD is **app-of-apps**: root `k8s-apps` (path `argocd/apps`) manages 6 Applications: `astronomy`, `prometheus-platform`, `observability-base`, `grafana`, `cert-sync`, `sample-apps` (7 apps total). Source is the **private GitHub repo** `toreau/k8s-research` (token in `argocd-repo-secret`, added via `argocd repo add`). No local git daemon.
-- **Astronomy image loop (cloud-driven)**: push to `astronomy.aursand.no` `main` → CI builds **multi-arch** (amd64 + arm64 matrix) → merges the manifest (`main-<sha>`, `latest`) → dispatches `astro-image-pushed` `{sha, digest}` → `astro-digest-bump.yml` bumps the digest in `apps/astronomy/api.yaml` (only that file) → ArgoCD auto-syncs from GitHub → the cluster rolls. No Mac involvement beyond hosting the cluster.
+- **Astronomy image loop (cloud-driven)**: push to `astronomy.aursand.no` `main` → CI builds **multi-arch** (amd64 + arm64 matrix) → merges the manifest (`main-<sha>`, `latest`) → dispatches `astro-image-pushed` `{sha, digest}` → `astro-digest-bump.yml` gates the digest (attestation, fail-fast) and **opens a PR** (`bump/astronomy-api-{sha7}`) → PR checks (`validate-apps`, `validate-argocd`, `gate-pr`) → **manual review + merge** (branch protection) → ArgoCD auto-syncs from GitHub → the cluster rolls. No Mac involvement beyond hosting the cluster. Bump PRs have two human touchpoints: approve the bot's workflow runs, then review + merge.
 
 ## Repo layout
 
@@ -25,13 +25,14 @@ kind cluster (arm64) → Skiperator CRs → operator (host binary) → k8s resou
 - `argocd/`: helm values + root Application `k8s-apps.yaml` + `apps/*.yaml` (6 Applications)
 - `cluster/`: applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`, `attestations/` (Sigstore Policy Controller + GitHub trust-policies)
 - `testapp/`: UID-150 Go test app
-- `.github/workflows/`: `validate.yml` (kubeconform + yamllint) + `astro-digest-bump.yml` (cloud-driven digest bump)
+- `.github/workflows/`: `validate.yml` (kubeconform + yamllint + `gate-pr` digest gate) + `astro-digest-bump.yml` (cloud-driven digest bump via PR)
+- `scripts/`: `protect-main.sh` (branch protection on main; `make protect-main`)
 
 ## SLSA supply-chain
 
 The astronomy image loop is SLSA-hardened at three layers (all verified end-to-end):
 1. **Producer (astronomy CI):** the merged multi-arch image is attested with SLSA build provenance + an SPDX SBOM (`actions/attest`, `push-to-registry`), and verified before dispatch.
-2. **Consumer gate (k8s-research `astro-digest-bump.yml`):** a digest is only committed if the GitHub attestations API returns a valid SLSA provenance for it.
+2. **Consumer gate (k8s-research `astro-digest-bump.yml` + `validate.yml` `gate-pr`):** an unattested digest never lands — the gate runs fail-fast before the PR is opened, and again as a required `gate-pr` PR check (the GitHub attestations API must return a valid SLSA provenance for the digest).
 3. **In-cluster (Sigstore Policy Controller + GitHub `trust-policies`, `cluster/attestations/`):** a pod running an unattested `ghcr.io/toreau/astronomy-api*` image is denied at admission (`ClusterImagePolicy`, cosign keyless; bootstrap with `make policy-controller`).
 
 > **Verification split:** the consumer gate is a *lightweight* check: it verifies only that an attestation exists with an SLSA-provenance predicate (keeping unattested digests out of git). Cryptographic signature verification happens **producer-side** (`gh attestation verify` in the astronomy CI, at build time) and **in-cluster** (Sigstore Policy Controller, fail-closed at admission).
@@ -46,11 +47,12 @@ make argo-sync     # sync all ArgoCD apps (root + 6, in order)
 make cluster       # fresh kind cluster + platform (skiperator: make setup-local)
 make astronomy     # bootstrap the astronomy demo end-to-end (idempotent); astronomy-verify
 make observability # Prometheus + Grafana (monitoring ns); pf-grafana
+make protect-main  # branch protection on main (required checks + 1 review)
 ```
 
 - ArgoCD UI: http://127.0.0.1:8081 · admin pw: `/tmp/argocd-admin.txt`
 - HTTPS test: `curl --cacert /tmp/local-ca.crt --connect-to <host>:443:127.0.0.1:8443 https://<host>/` (CA from `cert-manager/local-test-ca`)
-- **GitOps change**: edit `apps/*` → commit **and push** → ArgoCD auto-syncs (or `make argo-sync` for an immediate manual sync).
+- **GitOps change**: edit `apps/*` → push a branch + open a PR (**main is branch-protected**: required checks `validate-apps`/`validate-argocd`/`gate-pr` + 1 review; a single-user repo can't self-review, so merge with `gh pr merge --admin` or push directly as admin) → ArgoCD auto-syncs (or `make argo-sync` for an immediate manual sync).
 - **Fresh cluster**: `make cluster` → install ArgoCD (helm, `argocd/values.yaml`) → `argocd repo add https://github.com/toreau/k8s-research.git --username toreau --password <token>` (private repo) → `kubectl apply -f argocd/k8s-apps.yaml` → `make astronomy`.
 
 ## Verification cheat-sheet
