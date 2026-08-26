@@ -19,7 +19,7 @@ spec:
         fsGroup: 10001
       containers:
         - name: ingest
-          image: ghcr.io/toreau/astronomy-api@sha256:f3e78a1d844892855dacd5da2abfe88833405552901bfdb5f1ad8bcd7cadc9af
+          image: ghcr.io/toreau/astronomy-api@sha256:6302645d26a8096999b55526f6cfb1ac934e21ee86913d3ce367bd679bbf1075
           command: ["dotnet", "Astronomy.DataIngestion.dll", "omm", "refresh"]
           envFrom:
             - secretRef:
