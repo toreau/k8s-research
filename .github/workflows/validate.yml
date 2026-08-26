@@ -23,14 +23,22 @@ jobs:
       digest: ${{ steps.extract.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Extract astronomy-api digest from apps/astronomy/api.yaml
+      - name: Extract + verify image digest across manifests
         id: extract
         run: |
-          line="$(grep 'image: ghcr.io/toreau/astronomy-api@sha256:' apps/astronomy/api.yaml | head -1)"
-          [ -n "$line" ] || { echo "::error::no astronomy-api image line in apps/astronomy/api.yaml"; exit 1; }
-          d="${line##*sha256:}"
-          [ -n "$d" ] || { echo "::error::could not parse digest from: $line"; exit 1; }
-          echo "digest=sha256:$d" >> "$GITHUB_OUTPUT"
+          files="apps/astronomy/api.yaml apps/astronomy/ingest/ingest-datasets.yaml apps/astronomy/ingest/ingest-naif.yaml apps/astronomy/ingest/ingest-omm.yaml"
+          digest=""
+          for f in $files; do
+            line="$(grep 'image: ghcr.io/toreau/astronomy-api@sha256:' "$f" | head -1)"
+            [ -n "$line" ] || { echo "::error::no astronomy-api image line in $f"; exit 1; }
+            d="${line##*sha256:}"
+            [ -n "$d" ] || { echo "::error::could not parse digest from: $line"; exit 1; }
+            if [ -z "$digest" ]; then digest="sha256:$d"
+            elif [ "sha256:$d" != "$digest" ]; then
+              echo "::error::image digests differ: $f=$d vs $digest (api and ingest must match)"; exit 1
+            fi
+          done
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
   gate-pr:
     needs: resolve-digest
