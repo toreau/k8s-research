@@ -16,3 +16,27 @@ jobs:
     with:
       paths: "argocd/apps"
       yamllint-paths: "argocd/"
+
+  resolve-digest:
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.extract.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Extract astronomy-api digest from apps/astronomy/api.yaml
+        id: extract
+        run: |
+          line="$(grep 'image: ghcr.io/toreau/astronomy-api@sha256:' apps/astronomy/api.yaml | head -1)"
+          [ -n "$line" ] || { echo "::error::no astronomy-api image line in apps/astronomy/api.yaml"; exit 1; }
+          d="${line##*sha256:}"
+          [ -n "$d" ] || { echo "::error::could not parse digest from: $line"; exit 1; }
+          echo "digest=sha256:$d" >> "$GITHUB_OUTPUT"
+
+  gate-pr:
+    needs: resolve-digest
+    uses: toreau/gh-workflows/.github/workflows/attestation-gate.yml@v1
+    with:
+      owner-repo: "toreau/astronomy.aursand.no"
+      digest: ${{ needs.resolve-digest.outputs.digest }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
