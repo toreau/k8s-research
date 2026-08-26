@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-26 (reusable workflow library: toreau/gh-workflows)
+
+### Infrastructure & ops
+- **New reusable workflow library `toreau/gh-workflows`** (public, tag `v1`): 8 reusable workflows — `manifest-validate`, `dotnet-ci`, `container-build-push`, `container-merge-attest` (outputs `digest`), `dispatch`, `attestation-gate`, `digest-bump`, `native-pin-watcher`. This repo's `validate.yml` and `astro-digest-bump.yml` are rewritten as **thin callers** pinned `@v1` (PR #2/#3/#4); behavior unchanged. Cross-repo refs pinned by tag; dependabot (github-actions ecosystem) tracks `@v1`.
+- **Verified**: `validate` green against `@v1`; `astro-digest-bump` gate **fails** on an unattested digest (no commit) and is a no-op on the current digest. Full E2E re-check with the astronomy migration (Fase 2). `toreau/gh-workflows` hosting chosen because GitHub does not allow **public** caller → **private** callee reusable workflows (same-owner private→private only).
+
 ## 2026-08-26 (CI hardening: actions by SHA + dependabot)
 
 ### Infrastructure & ops

@@ -33,7 +33,7 @@ platform**: any istio-injected namespace's sidecar is auto-scraped.
 - `argocd/`: helm values + root Application `k8s-apps.yaml` + `apps/*.yaml` (6 Applications: astronomy, prometheus-platform, grafana, observability-base, cert-sync, sample-apps)
 - `testapp/`: UID-150 Go test app image (pushed to `ghcr.io/toreau/k8s-testapp`)
 - `skiperator/`: upstream clone, own repo (git-ignored); its `AGENTS.md` governs edits inside it
-- `.github/workflows/validate.yml`: CI: kubeconform + yamllint over `apps/` and `argocd/apps/` (Skiperator CRD schemas in `ci/schemas/`)
+- `.github/workflows/`: thin callers into the reusable workflow library `toreau/gh-workflows` (`@v1`): `validate.yml` (kubeconform + yamllint via `manifest-validate`; Skiperator CRD schemas in `ci/schemas/`) + `astro-digest-bump.yml` (`attestation-gate` → `digest-bump`)
 
 ## Key commands
 
@@ -101,6 +101,13 @@ curl --cacert /tmp/local-ca.crt --connect-to sample-two.172.21.255.200.nip.io:44
 - **ArgoCD automation gotcha**: `syncPolicy.automated` being present keeps auto-sync ON even with `prune: false`/`selfHeal: false`; those only disable pruning/self-healing. To fully pause auto-sync set `syncPolicy.automated: null`.
 - ArgoCD manages the Skiperator **CRs**, not the operator-generated Deployment (self-heal acts at CR level).
 - ArgoCD sources the **private** `https://github.com/toreau/k8s-research.git` with a GitHub token stored in `argocd-repo-secret` (added via `argocd repo add --username toreau --password <token>`; currently the `gh auth token`; rotate if it needs to be revoked). Fresh clusters need this repo-add step (with a token) before apps can sync.
+
+## Reusable workflows (toreau/gh-workflows)
+
+- Shared CI/CD library lives in the **public** `toreau/gh-workflows` repo (tag **`v1`**; dependabot keeps refs fresh). Never host it here: public callers can't use private reusable workflows, and subdirectories of `.github/workflows/` are unsupported — files must sit at the repo root.
+- This repo only holds **thin callers**: `uses: toreau/gh-workflows/.github/workflows/<name>.yml@v1`.
+- Library: `manifest-validate` (kubeconform+yamllint), `dotnet-ci`, `container-build-push`, `container-merge-attest` (outputs `digest`), `dispatch`, `attestation-gate`, `digest-bump`, `native-pin-watcher`.
+- Adding a library workflow: branch + PR (`gh pr create`/`merge --squash`), `actionlint` clean, then fast-forward tag `v1`; dependabot PRs then bump caller refs.
 
 ## Conventions
 
