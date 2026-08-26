@@ -2,8 +2,6 @@
 
 Local Kubernetes testing stack on a MacBook Pro (Apple Silicon / arm64 / macOS): **kind** + **Skiperator** (Kartverket's operator) + **ArgoCD** (GitOps). The cluster is a throwaway local environment, and the deployment loop is **fully cloud-driven**; the Mac only hosts the cluster, the operator and port-forwards.
 
-Full detail, key commands and gotchas: **`AGENTS.md`**. Build history: Docmost `Work Logs/2026-08-24 Phase 0` … `2026-08-25 Del 1–4` and the repo `CHANGELOG.md`.
-
 ## Architecture
 
 ```
@@ -38,8 +36,6 @@ The astronomy image loop is SLSA-hardened at three layers (all verified end-to-e
 
 > **Verification split:** the consumer gate is a *lightweight* check: it verifies only that an attestation exists with an SLSA-provenance predicate (keeping unattested digests out of git). Cryptographic signature verification happens **producer-side** (`gh attestation verify` in the astronomy CI, at build time) and **in-cluster** (Sigstore Policy Controller, fail-closed at admission).
 
-> **Lær flyten:** [`docs/explained.md`](docs/explained.md): norsk, pedagogisk gjennomgang av hele kjeden (git push → CI → attestasjon → gate → ArgoCD → Policy Controller → rollout), skrevet for utviklere uten DevOps-bakgrunn.
-
 ## Quick start
 
 ```bash
@@ -66,5 +62,3 @@ make astronomy-verify      # demo smoke-test (fail-fast)
 kubectl -n argocd get applications   # 7 apps Synced/Healthy
 curl --cacert /tmp/local-ca.crt --connect-to sample-two.172.21.255.200.nip.io:443:127.0.0.1:8443 https://sample-two.172.21.255.200.nip.io/
 ```
-
-See `AGENTS.md` for the full command list, workflows, onboarding and gotchas; Docmost (`Projects/k8s-research`, the Norwegian k8s manual, work logs) for durable knowledge and build history.

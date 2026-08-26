@@ -18,6 +18,11 @@ skiperator-webhook-certs*/
 # Astronomy demo local secrets (never commit)
 .env.astronomy
 
+# Local-only files (never publish)
+/AGENTS.md
+/CHANGELOG.md
+/docs/
+
 # Editors
 .idea/
 .vscode/
