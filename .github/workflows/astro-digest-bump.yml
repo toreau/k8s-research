@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   gate:
@@ -25,5 +26,8 @@ jobs:
       digest: ${{ github.event.client_payload.digest }}
       sha: ${{ github.event.client_payload.sha }}
       commit-message: "astronomy: bump api digest to {digest12} (sha {sha7})"
+      open-pr: true
+      head-branch: "bump/astronomy-api-{sha7}"
+      pr-title: "astronomy: bump api digest to {digest12} (sha {sha7})"
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
