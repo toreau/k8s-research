@@ -36,6 +36,8 @@ The astronomy image loop is SLSA-hardened at three layers (all verified end-to-e
 2. **Consumer gate (k8s-research `astro-digest-bump.yml`):** a digest is only committed if the GitHub attestations API returns a valid SLSA provenance for it.
 3. **In-cluster (Kyverno `ImageValidatingPolicy`, `cluster/kyverno/`):** a pod running an unattested `ghcr.io/toreau/astronomy-api*` image is denied at admission (`verifyAttestationSignatures`, cosign keyless). Bootstrap with `make kyverno`.
 
+> **Verification split:** the consumer gate is a *lightweight* check — it verifies only that an attestation exists with an SLSA-provenance predicate (keeping unattested digests out of git). Cryptographic signature verification happens **producer-side** (`gh attestation verify` in the astronomy CI, at build time) and **in-cluster** (Kyverno `verifyAttestationSignatures`, fail-closed at admission).
+
 ## Quick start
 
 ```bash
