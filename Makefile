@@ -227,6 +227,8 @@ astronomy:
 	@kubectl --context $(KUBECTX) get nodes >/dev/null 2>&1 || { echo "cluster not running — run: make cluster"; exit 1; }
 	@pgrep -f 'bin/skiperator' >/dev/null || { echo "starting operator..."; $(MAKE) operator >/dev/null 2>&1; sleep 20; }
 	@lsof -i :8443 -sTCP:LISTEN >/dev/null 2>&1 || $(MAKE) pf >/dev/null 2>&1
+	@kubectl --context $(KUBECTX) -n skiperator-system patch cm namespace-exclusions --type merge -p '{"data":{"astronomy-db":"true"}}' >/dev/null 2>&1 || true
+	@kubectl --context $(KUBECTX) -n astronomy-db delete networkpolicy default-deny --ignore-not-found >/dev/null 2>&1 || true
 	@$(MAKE) astronomy-secrets
 	@echo "-- argo sync --"; argocd app sync k8s-apps >/dev/null 2>&1 || true
 	@echo "-- wait postgres --"; kubectl --context $(KUBECTX) -n astronomy-db rollout status deploy/astronomy-db --timeout=180s >/dev/null 2>&1 || { echo "postgres not ready"; exit 1; }
