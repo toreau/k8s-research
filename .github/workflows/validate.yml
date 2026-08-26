@@ -6,13 +6,13 @@ on:
 
 jobs:
   validate-apps:
-    uses: toreau/gh-workflows/.github/workflows/manifest-validate.yml@e65a28dc2f66faac72ef246eb7685f5a62e51950
+    uses: toreau/gh-workflows/.github/workflows/manifest-validate.yml@v1
     with:
       paths: "apps/"
       schemas-dir: "ci/schemas"
 
   validate-argocd:
-    uses: toreau/gh-workflows/.github/workflows/manifest-validate.yml@e65a28dc2f66faac72ef246eb7685f5a62e51950
+    uses: toreau/gh-workflows/.github/workflows/manifest-validate.yml@v1
     with:
       paths: "argocd/apps"
       yamllint-paths: "argocd/"
@@ -34,7 +34,7 @@ jobs:
 
   gate-pr:
     needs: resolve-digest
-    uses: toreau/gh-workflows/.github/workflows/attestation-gate.yml@e65a28dc2f66faac72ef246eb7685f5a62e51950
+    uses: toreau/gh-workflows/.github/workflows/attestation-gate.yml@v1
     with:
       owner-repo: "toreau/astronomy.aursand.no"
       digest: ${{ needs.resolve-digest.outputs.digest }}
