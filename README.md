@@ -25,7 +25,7 @@ kind cluster (arm64) → Skiperator CRs → operator (host binary) → k8s resou
 
 - `apps/`: GitOps-managed, one directory per ArgoCD app (`sample/`, `astronomy/{api.yaml,db/,infra/,ingest/}`, `observability/{base,platform,grafana}/`, `tools/`)
 - `argocd/`: helm values + root Application `k8s-apps.yaml` + `apps/*.yaml` (6 Applications)
-- `cluster/`: applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`, `kyverno/` (SLSA attestation policy)
+- `cluster/`: applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`, `attestations/` (Sigstore Policy Controller + GitHub trust-policies)
 - `testapp/`: UID-150 Go test app
 - `.github/workflows/`: `validate.yml` (kubeconform + yamllint) + `astro-digest-bump.yml` (cloud-driven digest bump)
 
@@ -34,11 +34,11 @@ kind cluster (arm64) → Skiperator CRs → operator (host binary) → k8s resou
 The astronomy image loop is SLSA-hardened at three layers (all verified end-to-end):
 1. **Producer (astronomy CI):** the merged multi-arch image is attested with SLSA build provenance + an SPDX SBOM (`actions/attest`, `push-to-registry`), and verified before dispatch.
 2. **Consumer gate (k8s-research `astro-digest-bump.yml`):** a digest is only committed if the GitHub attestations API returns a valid SLSA provenance for it.
-3. **In-cluster (Kyverno `ImageValidatingPolicy`, `cluster/kyverno/`):** a pod running an unattested `ghcr.io/toreau/astronomy-api*` image is denied at admission (`verifyAttestationSignatures`, cosign keyless). Bootstrap with `make kyverno`.
+3. **In-cluster (Sigstore Policy Controller + GitHub `trust-policies`, `cluster/attestations/`):** a pod running an unattested `ghcr.io/toreau/astronomy-api*` image is denied at admission (`ClusterImagePolicy`, cosign keyless; bootstrap with `make policy-controller`).
 
-> **Verification split:** the consumer gate is a *lightweight* check: it verifies only that an attestation exists with an SLSA-provenance predicate (keeping unattested digests out of git). Cryptographic signature verification happens **producer-side** (`gh attestation verify` in the astronomy CI, at build time) and **in-cluster** (Kyverno `verifyAttestationSignatures`, fail-closed at admission).
+> **Verification split:** the consumer gate is a *lightweight* check: it verifies only that an attestation exists with an SLSA-provenance predicate (keeping unattested digests out of git). Cryptographic signature verification happens **producer-side** (`gh attestation verify` in the astronomy CI, at build time) and **in-cluster** (Sigstore Policy Controller, fail-closed at admission).
 
-> **Lær flyten:** [`docs/explained.md`](docs/explained.md): norsk, pedagogisk gjennomgang av hele kjeden (git push → CI → attestasjon → gate → ArgoCD → Kyverno → rollout), skrevet for utviklere uten DevOps-bakgrunn.
+> **Lær flyten:** [`docs/explained.md`](docs/explained.md): norsk, pedagogisk gjennomgang av hele kjeden (git push → CI → attestasjon → gate → ArgoCD → Policy Controller → rollout), skrevet for utviklere uten DevOps-bakgrunn.
 
 ## Quick start
 

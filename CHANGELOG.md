@@ -1,9 +1,17 @@
 # Changelog
 
+## 2026-08-26 (Fase 3: in-cluster attestation → Sigstore Policy Controller)
+
+### Infrastructure & ops
+- **Kyverno replaced by the Sigstore Policy Controller + GitHub `trust-policies`** (`cluster/attestations/`, `make policy-controller`): a `ClusterImagePolicy` now enforces SLSA-provenance attestations on `ghcr.io/toreau/astronomy-api*` at admission (subject `…/container-merge-attest.yml@refs/tags/v1`, issuer `token.actions…`; public-good authority; istio `proxyv2` exempt). Kyverno fully removed (ns/CRDs/webhooks/exclusions). Commits `f2e43cb`, `b485af6`.
+- **Verified end-to-end**: full E2E (astronomy `41c22db` → gate+bump `07bc944` → ArgoCD → **Policy Controller admitted** `cde3b282`, confirmed in webhook log) · negative control (unattested digest denied «no valid bundles exist in registry») · fresh-cluster greenfield bootstrap + idempotency of `make policy-controller` · stack restored after `make cluster-delete` (S4.4). `make astronomy-verify` green on the current cluster.
+- **Gotchas learned** (see AGENTS.md): `make policy-controller` is install-once (re-`helm upgrade` conflicts on the webhook `namespaceSelector`); `helm uninstall policy-controller` deletes the `policy.sigstore.dev` CRDs; `subjectRegExp` needs `\\.` in values; the GitHub trust-root authority doesn't yet verify our rekor-logged bundles (public-good does). Restore quirks: operator health probe binds :8081 (ArgoCD pf → 18081), fresh base needs `argocd` in `namespace-exclusions`, `cluster/istio-gateways/` applied manually.
+- Docs updated: AGENTS/README/`docs/explained.md` (Kyverno → Policy Controller), Docmost (Projects, manual, Decisions & gotchas, Services/astronomy, Flyten forklart).
+
 ## 2026-08-26 (reusable workflow library: toreau/gh-workflows)
 
 ### Infrastructure & ops
-- **New reusable workflow library `toreau/gh-workflows`** (public, tag `v1`): 8 reusable workflows — `manifest-validate`, `dotnet-ci`, `container-build-push`, `container-merge-attest` (outputs `digest`), `dispatch`, `attestation-gate`, `digest-bump`, `native-pin-watcher`. This repo's `validate.yml` and `astro-digest-bump.yml` are rewritten as **thin callers** pinned `@v1` (PR #2/#3/#4); behavior unchanged. Cross-repo refs pinned by tag; dependabot (github-actions ecosystem) tracks `@v1`.
+- **New reusable workflow library `toreau/gh-workflows`** (public, tag `v1`): 8 reusable workflows: `manifest-validate`, `dotnet-ci`, `container-build-push`, `container-merge-attest` (outputs `digest`), `dispatch`, `attestation-gate`, `digest-bump`, `native-pin-watcher`. This repo's `validate.yml` and `astro-digest-bump.yml` are rewritten as **thin callers** pinned `@v1` (PR #2/#3/#4); behavior unchanged. Cross-repo refs pinned by tag; dependabot (github-actions ecosystem) tracks `@v1`.
 - **Verified**: `validate` green against `@v1`; `astro-digest-bump` gate **fails** on an unattested digest (no commit) and is a no-op on the current digest. Full E2E re-check with the astronomy migration (Fase 2). `toreau/gh-workflows` hosting chosen because GitHub does not allow **public** caller → **private** callee reusable workflows (same-owner private→private only).
 
 ## 2026-08-26 (CI hardening: actions by SHA + dependabot)
