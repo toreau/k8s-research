@@ -8,55 +8,22 @@ permissions:
   contents: write
 
 jobs:
+  gate:
+    uses: toreau/gh-workflows/.github/workflows/attestation-gate.yml@main
+    with:
+      owner-repo: "toreau/astronomy.aursand.no"
+      digest: ${{ github.event.client_payload.digest }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
   bump:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Verify attestation (gate)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DIGEST: ${{ github.event.client_payload.digest }}
-        run: |
-          # GitHub-hosted attestations for the subject digest via the REST API
-          # (no GHCR auth needed — the oci:// resolution in `gh attestation
-          # verify` requires registry credentials for the private package).
-          # Full signature verification already ran producer-side in the
-          # astronomy CI before dispatch; in-cluster cosign enforcement (SLSA-4).
-          api="repos/toreau/astronomy.aursand.no/attestations/${DIGEST}"
-          resp=$(gh api "$api" 2>/dev/null) || { echo "no attestations for ${DIGEST} (404)"; exit 1; }
-          n=$(printf '%s' "$resp" | jq '.attestations | length')
-          [ "$n" -ge 1 ] || { echo "no attestations for ${DIGEST}"; exit 1; }
-          preds=$(printf '%s' "$resp" | jq -r '[.attestations[].bundle.dsseEnvelope.payload | @base64d | fromjson | .predicateType] | join(" ")')
-          echo "verified ${n} attestation(s) for ${DIGEST}: ${preds}"
-          case " ${preds} " in
-            *" https://slsa.dev/provenance/v1 "*) echo "SLSA provenance OK" ;;
-            *) echo "SLSA provenance missing (${preds})"; exit 1 ;;
-          esac
-      - name: Bump api.yaml digest
-        id: update
-        env:
-          DIGEST: ${{ github.event.client_payload.digest }}
-          SHA: ${{ github.event.client_payload.sha }}
-        run: |
-          # imagetools inspect returns "sha256:<hex>"; strip the prefix so the
-          # replacement doesn't duplicate it (the image line already has sha256:).
-          d="${DIGEST#sha256:}"
-          f=apps/astronomy/api.yaml
-          sed -i -E "s#(image: ghcr.io/toreau/astronomy-api@sha256:)[0-9a-f]{64}#\1${d}#" "$f"
-          if git diff --quiet "$f"; then
-            echo "digest unchanged, nothing to commit"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "new image line: $(grep 'image:' "$f" | head -1)"
-          fi
-      - name: Commit + push
-        if: steps.update.outputs.changed == 'true'
-        env:
-          DIGEST: ${{ github.event.client_payload.digest }}
-          SHA: ${{ github.event.client_payload.sha }}
-        run: |
-          git config user.name "k8s-research bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add apps/astronomy/api.yaml
-          git commit -m "astronomy: bump api digest to ${DIGEST:0:12} (sha ${SHA:0:7})"
-          git push
+    needs: gate
+    uses: toreau/gh-workflows/.github/workflows/digest-bump.yml@main
+    with:
+      file-path: "apps/astronomy/api.yaml"
+      image-prefix: "image: ghcr.io/toreau/astronomy-api@sha256:"
+      digest: ${{ github.event.client_payload.digest }}
+      sha: ${{ github.event.client_payload.sha }}
+      commit-message: "astronomy: bump api digest to {digest12} (sha {sha7})"
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
