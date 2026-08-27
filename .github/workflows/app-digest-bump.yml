@@ -1,10 +1,30 @@
 name: app-digest-bump
 
 # Generic cloud-driven digest bump: any app repo dispatches `app-image-pushed`
-# with client_payload {app, digest, sha}; this workflow reads apps/<app>/meta.yaml
-# for the image/file-paths and opens a bump PR (gate only when attestation: true).
-# Replaces the astronomy-specific astro-digest-bump.yml (astronomy migrates to the
-# generic event in a later phase; astro-digest-bump.yml is kept, deprecated).
+# with client_payload {app, digest, sha, v, ts, sig}; this workflow reads
+# apps/<app>/meta.yaml for the image/file-paths and opens a bump PR.
+#
+# SECURITY INVARIANT: a repository_dispatch only grants permission to START an
+# evaluation. It never by itself confers trust in `app`, `sha`, `digest` or
+# provenance. The whole client_payload is UNTRUSTED until validated here, against
+# configured trust anchors:
+#
+#   repository_dispatch (untrusted proposal)
+#     -> VALIDATE app against a strict allowlist (NO path dereference before this)
+#     -> AUTH: HMAC-v1 over {v,app,sha,digest,ts} using DISPATCH_HMAC_KEYS[app];
+#              freshness window (now-300s <= ts <= now+60s). This is a freshness
+#              check, NOT replay protection (no receiver-side nonce state); a
+#              duplicate authenticated dispatch inside the window may be accepted —
+#              downstream promotion is idempotent.
+#     -> BIND: expected image from meta.yaml.
+#          damped app  -> verify digest belongs to expected image (OCI registry lookup)
+#          attested app -> attestation-gate in STRONG mode (--bundle-from-oci)
+#                          with expected repo/signer-workflow/source-ref and
+#                          --source-digest = HMAC-authenticated payload.sha
+#     -> bump-PR
+#
+# No earlier successful control exempts the final promotion state from being
+# re-verified (validate.yml gate-pr enforces the same policy at the PR boundary).
 
 on:
   repository_dispatch:
@@ -20,24 +40,32 @@ jobs:
     outputs:
       app-name: ${{ steps.meta.outputs.app-name }}
       repo: ${{ steps.meta.outputs.repo }}
+      image: ${{ steps.meta.outputs.image }}
       file-path: ${{ steps.meta.outputs.file-path }}
       file-paths: ${{ steps.meta.outputs.file-paths }}
       image-prefix: ${{ steps.meta.outputs.image-prefix }}
       attestation: ${{ steps.meta.outputs.attestation }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Read app meta
-        id: meta
+      - name: Validate app identifier (allowlist, before any path dereference)
+        id: app
         env:
           APP: ${{ github.event.client_payload.app }}
         run: |
-          [ -n "$APP" ] || { echo "::error::client_payload.app is required"; exit 1; }
+          case "$APP" in
+            "" ) echo "::error::client_payload.app is required"; exit 1 ;;
+            */*|*\\*|*..*|*[!a-z0-9.-]*|[.-]*) echo "::error::invalid app identifier '$APP'"; exit 1 ;;
+          esac
+          # Only resolve against known app directories (allowlist).
+          [ -d "apps/$APP" ] && [ -f "apps/$APP/meta.yaml" ] \
+            || { echo "::error::no apps/$APP/meta.yaml for app '$APP'"; exit 1; }
+          echo "app-validated=$APP"
+      - name: Read app meta
+        id: meta
+        env:
+          APP: ${{ steps.app.outputs.app-validated }}
+        run: |
           META="apps/$APP/meta.yaml"
-          [ -f "$META" ] || { echo "::error::no $META for app '$APP'"; exit 1; }
-          # NOTE: the dispatching repo cannot be validated for repository_dispatch —
-          # github.event.repository is the RECEIVING repo (this one), and the sender
-          # repo is not in the payload. Access is gated by dispatch permission on this
-          # repo; the app must map to an existing apps/<app>/meta.yaml (checked above).
           name=$(ruby -ryaml -e "puts YAML.load_file('$META')['app']['name']")
           repo=$(ruby -ryaml -e "puts YAML.load_file('$META')['app']['repo']")
           image=$(ruby -ryaml -e "puts YAML.load_file('$META')['app']['image']")
@@ -47,28 +75,92 @@ jobs:
           {
             echo "app-name=$name"
             echo "repo=$repo"
+            echo "image=$image"
             echo "file-path=$first_file"
             echo "file-paths=$file_paths"
             echo "image-prefix=image: $image@sha256:"
             echo "attestation=$attestation"
           } >> "$GITHUB_OUTPUT"
 
-  gate:
+  auth:
     needs: prep
+    runs-on: ubuntu-latest
+    outputs:
+      ok: ${{ steps.verify.outputs.ok }}
+    steps:
+      - name: Verify HMAC-v1 signature + freshness
+        id: verify
+        env:
+          APP: ${{ github.event.client_payload.app }}
+          SHA: ${{ github.event.client_payload.sha }}
+          DIGEST: ${{ github.event.client_payload.digest }}
+          V: ${{ github.event.client_payload.v }}
+          TS: ${{ github.event.client_payload.ts }}
+          SIG: ${{ github.event.client_payload.sig }}
+          HMAC_KEYS: ${{ secrets.DISPATCH_HMAC_KEYS }}
+        run: |
+          app="$APP"; sha="$SHA"; digest="$DIGEST"; v="$V"; ts="$TS"; sig="$SIG"
+          { [ -n "$app" ] && [ -n "$sha" ] && [ -n "$digest" ] \
+            && [ -n "$v" ] && [ -n "$ts" ] && [ -n "$sig" ]; } || {
+            echo "::error::missing HMAC-v1 fields (v/app/sha/digest/ts/sig) in client_payload"; exit 1; }
+          [ "$v" = "1" ] || { echo "::error::unsupported HMAC-v1 version '$v'"; exit 1; }
+          key=$(printf '%s' "$HMAC_KEYS" | jq -r --arg a "$app" '.[$a] // empty')
+          [ -n "$key" ] || { echo "::error::no HMAC key configured for app '$app'"; exit 1; }
+          now=$(date +%s)
+          if [ "$(( now - ts ))" -gt 300 ] || [ "$(( ts - now ))" -gt 60 ]; then
+            echo "::error::dispatch outside freshness window (ts=$ts, now=$now)"; exit 1
+          fi
+          canon=$(jq -cS -n --arg v "$v" --arg app "$app" --arg sha "$sha" \
+            --arg digest "$digest" --argjson ts "$ts" \
+            '{v:($v|tonumber), app:$app, sha:$sha, digest:$digest, ts:$ts}')
+          expected=$(printf '%s' "$canon" | openssl dgst -sha256 -hmac "$key" | awk '{print $2}')
+          [ "$sig" = "$expected" ] || { echo "::error::HMAC-v1 signature mismatch"; exit 1; }
+          echo "HMAC-v1 OK: canonical=$canon"
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+  bind:
+    needs: [prep, auth]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify digest belongs to expected image (OCI registry lookup)
+        env:
+          REG_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          IMAGE: ${{ needs.prep.outputs.image }}
+          DIGEST: ${{ github.event.client_payload.digest }}
+          SHA: ${{ github.event.client_payload.sha }}
+        run: |
+          if [ -n "$REG_TOKEN" ]; then
+            echo "$REG_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
+          fi
+          ref="${IMAGE}@${DIGEST}"
+          docker buildx imagetools inspect "$ref" --format '{{.Name}}@{{.Manifest.Digest}}' \
+            || { echo "::error::digest ${DIGEST} not found under expected image ${IMAGE}"; exit 1; }
+          echo "OCI binding OK: ${IMAGE}@${DIGEST} exists"
+          # For attested apps the strong gate re-verifies provenance incl. source SHA.
+
+  gate:
+    needs: [prep, auth]
     if: needs.prep.outputs.attestation == 'true'
     uses: toreau/gh-workflows/.github/workflows/attestation-gate.yml@v1
     with:
       owner-repo: ${{ needs.prep.outputs.repo }}
       digest: ${{ github.event.client_payload.digest }}
+      image: ${{ needs.prep.outputs.image }}
+      # signer-workflow carries the repo identity (full owner/repo path);
+      # signer-repo is NOT passed (mutually exclusive flags).
+      signer-workflow: "${{ needs.prep.outputs.repo }}/.github/workflows/ci.yml"
+      source-ref: "refs/heads/main"
+      source-digest: ${{ github.event.client_payload.sha }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
+      registry-token: ${{ secrets.GHCR_TOKEN }}
 
   bump:
-    needs: [prep, gate]
-    # Run when gate is SKIPPED (attestation:false app — skipped deps don't
-    # propagate to dependents by default), but NOT when gate failed (attested app
-    # with no attestation must not bump).
-    if: ${{ !cancelled() && needs.gate.result != 'failure' }}
+    needs: [prep, auth, bind, gate]
+    # Attested apps: gate must be SUCCESS. Damped apps: gate is skipped (bind ran).
+    # auth+prep are always required. Run when gate is SKIPPED (attestation:false)
+    # or SUCCESS, but NOT when any needed job failed.
+    if: ${{ !cancelled() && needs.auth.result == 'success' && needs.bind.result == 'success' && needs.gate.result != 'failure' }}
     uses: toreau/gh-workflows/.github/workflows/digest-bump.yml@v1
     with:
       file-path: ${{ needs.prep.outputs.file-path }}
