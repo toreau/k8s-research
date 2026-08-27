@@ -65,6 +65,10 @@ jobs:
 
   bump:
     needs: [prep, gate]
+    # Run when gate is SKIPPED (attestation:false app — skipped deps don't
+    # propagate to dependents by default), but NOT when gate failed (attested app
+    # with no attestation must not bump).
+    if: ${{ !cancelled() && needs.gate.result != 'failure' }}
     uses: toreau/gh-workflows/.github/workflows/digest-bump.yml@v1
     with:
       file-path: ${{ needs.prep.outputs.file-path }}
