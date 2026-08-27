@@ -52,7 +52,7 @@ jobs:
             done
             digests=$(echo "$digests" | jq -c --arg a "$name" --arg d "$digest" '. + {($a): $d}')
             if [ "$attestation" = "true" ]; then
-              attested=$(echo "$attested" | jq -c --arg a "$name" --arg d "$digest" --arg r "$repo" '. + [{app:$a,digest:$d,repo:$r}]')
+              attested=$(echo "$attested" | jq -c --arg a "$name" --arg d "$digest" --arg r "$repo" --arg i "$image" '. + [{app:$a,digest:$d,repo:$r,image:$i}]')
             fi
           done
           echo "digests=$digests" >> "$GITHUB_OUTPUT"
@@ -62,23 +62,38 @@ jobs:
     needs: resolve-digest
     runs-on: ubuntu-latest
     steps:
-      - name: Gate attested app digests
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4.3.0
+      - name: Gate attested app digests (strong consumer-side verification)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REG_TOKEN: ${{ secrets.GHCR_TOKEN }}
           ATTESTED: ${{ needs.resolve-digest.outputs.attested }}
         run: |
           n=$(echo "$ATTESTED" | jq 'length')
           echo "attested apps: $n"
           if [ "$n" -eq 0 ]; then echo "no attested apps to gate"; exit 0; fi
+          if [ -n "$REG_TOKEN" ]; then
+            echo "$REG_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
+          fi
           while read -r entry; do
             app=$(echo "$entry" | jq -r .app)
             digest=$(echo "$entry" | jq -r .digest)
             repo=$(echo "$entry" | jq -r .repo)
-            resp=$(gh api "repos/$repo/attestations/$digest" 2>/dev/null) \
-              || { echo "::error::$app: no attestations for $digest (404)"; exit 1; }
-            preds=$(echo "$resp" | jq -r '[.attestations[].bundle.dsseEnvelope.payload | @base64d | fromjson | .predicateType] | join(" ")')
-            case " $preds " in
-              *" https://slsa.dev/provenance/v1 "*) echo "$app: SLSA predicate OK" ;;
-              *) echo "::error::$app: SLSA predicate missing ($preds)"; exit 1 ;;
-            esac
+            image=$(echo "$entry" | jq -r .image)
+            echo "gate-pr: verifying $app $image@$digest"
+            # Strong mode: cryptographic verification of the OCI attestation bundle,
+            # bound to the expected repo + signer workflow + source ref.
+            # NOTE: no --source-digest here — a direct PR has no independently trusted
+            # expected source SHA. This is "trusted-main provenance" (an older but
+            # valid main artifact may be promoted, enabling rollback).
+            # signer-repo and signer-workflow are mutually exclusive; the workflow
+            # path carries the repo identity.
+            gh attestation verify "oci://${image}@${digest}" \
+              --repo "$repo" \
+              --bundle-from-oci \
+              --signer-workflow "${repo}/.github/workflows/ci.yml" \
+              --source-ref "refs/heads/main" \
+              --predicate-type "https://slsa.dev/provenance/v1" \
+              || { echo "::error::$app: attestation verification failed for ${image}@${digest}"; exit 1; }
+            echo "$app: strong verification OK (trusted-main provenance)"
           done < <(echo "$ATTESTED" | jq -c '.[]')
