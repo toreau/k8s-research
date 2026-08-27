@@ -1,5 +1,10 @@
 name: astro-digest-bump
 
+# DEPRECATED (Fase 1): astronomy is migrating to the generic app-digest-bump.yml
+# (event `app-image-pushed` + apps/astronomy/meta.yaml). Kept temporarily so the
+# astronomy dispatch (`astro-image-pushed`) stays handled until astronomy's CI is
+# migrated (next phase); remove this file then.
+
 on:
   repository_dispatch:
     types: [astro-image-pushed]

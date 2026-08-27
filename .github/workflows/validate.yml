@@ -20,31 +20,63 @@ jobs:
   resolve-digest:
     runs-on: ubuntu-latest
     outputs:
-      digest: ${{ steps.extract.outputs.digest }}
+      digests: ${{ steps.extract.outputs.digests }}
+      attested: ${{ steps.extract.outputs.attested }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Extract + verify image digest across manifests
+      - name: Extract + verify image digests per app
         id: extract
         run: |
-          files="apps/astronomy/api.yaml apps/astronomy/ingest/ingest-datasets.yaml apps/astronomy/ingest/ingest-naif.yaml apps/astronomy/ingest/ingest-omm.yaml"
-          digest=""
-          for f in $files; do
-            line="$(grep 'image: ghcr.io/toreau/astronomy-api@sha256:' "$f" | head -1)"
-            [ -n "$line" ] || { echo "::error::no astronomy-api image line in $f"; exit 1; }
-            d="${line##*sha256:}"
-            [ -n "$d" ] || { echo "::error::could not parse digest from: $line"; exit 1; }
-            if [ -z "$digest" ]; then digest="sha256:$d"
-            elif [ "sha256:$d" != "$digest" ]; then
-              echo "::error::image digests differ: $f=$d vs $digest (api and ingest must match)"; exit 1
+          digests='{}'
+          attested='[]'
+          for meta in apps/*/meta.yaml; do
+            [ -f "$meta" ] || continue
+            name=$(ruby -ryaml -e "puts YAML.load_file('$meta')['app']['name']")
+            image=$(ruby -ryaml -e "puts YAML.load_file('$meta')['app']['image']")
+            repo=$(ruby -ryaml -e "puts YAML.load_file('$meta')['app']['repo']")
+            attestation=$(ruby -ryaml -e "puts (YAML.load_file('$meta')['app']['attestation'] || false).to_s")
+            files=$(ruby -ryaml -e "puts YAML.load_file('$meta')['app']['digestFiles'].join(' ')")
+            prefix="image: $image@sha256:"
+            digest=""
+            for f in $files; do
+              line="$(grep "$prefix" "$f" | head -1)"
+              [ -n "$line" ] || { echo "::error::$name: no image line ($prefix) in $f"; exit 1; }
+              d="${line##*sha256:}"
+              [ -n "$d" ] || { echo "::error::$name: could not parse digest from: $line"; exit 1; }
+              if [ -z "$digest" ]; then digest="sha256:$d"
+              elif [ "sha256:$d" != "$digest" ]; then
+                echo "::error::$name: image digests differ ($f=$d vs $digest)"; exit 1
+              fi
+            done
+            digests=$(echo "$digests" | jq --arg a "$name" --arg d "$digest" '. + {($a): $d}')
+            if [ "$attestation" = "true" ]; then
+              attested=$(echo "$attested" | jq --arg a "$name" --arg d "$digest" --arg r "$repo" '. + [{app:$a,digest:$d,repo:$r}]')
             fi
           done
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "digests=$digests" >> "$GITHUB_OUTPUT"
+          echo "attested=$attested" >> "$GITHUB_OUTPUT"
 
   gate-pr:
     needs: resolve-digest
-    uses: toreau/gh-workflows/.github/workflows/attestation-gate.yml@v1
-    with:
-      owner-repo: "toreau/astronomy.aursand.no"
-      digest: ${{ needs.resolve-digest.outputs.digest }}
-    secrets:
-      token: ${{ secrets.GITHUB_TOKEN }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate attested app digests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ATTESTED: ${{ needs.resolve-digest.outputs.attested }}
+        run: |
+          n=$(echo "$ATTESTED" | jq 'length')
+          echo "attested apps: $n"
+          if [ "$n" -eq 0 ]; then echo "no attested apps to gate"; exit 0; fi
+          while read -r entry; do
+            app=$(echo "$entry" | jq -r .app)
+            digest=$(echo "$entry" | jq -r .digest)
+            repo=$(echo "$entry" | jq -r .repo)
+            resp=$(gh api "repos/$repo/attestations/$digest" 2>/dev/null) \
+              || { echo "::error::$app: no attestations for $digest (404)"; exit 1; }
+            preds=$(echo "$resp" | jq -r '[.attestations[].bundle.dsseEnvelope.payload | @base64d | fromjson | .predicateType] | join(" ")')
+            case " $preds " in
+              *" https://slsa.dev/provenance/v1 "*) echo "$app: SLSA predicate OK" ;;
+              *) echo "::error::$app: SLSA predicate missing ($preds)"; exit 1 ;;
+            esac
+          done < <(echo "$ATTESTED" | jq -c '.[]')

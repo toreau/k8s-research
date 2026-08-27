@@ -1,0 +1,15 @@
+# Per-app metadata driving the generic cloud-driven loop (see apps/README.md).
+app:
+  name: astronomy
+  repo: toreau/astronomy.aursand.no
+  image: ghcr.io/toreau/astronomy-api
+  digestFiles:
+    - apps/astronomy/api.yaml
+    - apps/astronomy/ingest/ingest-datasets.yaml
+    - apps/astronomy/ingest/ingest-naif.yaml
+    - apps/astronomy/ingest/ingest-omm.yaml
+  hosts:
+    - astronomy.172.21.255.200.nip.io
+  port: 8080
+  buildType: dotnet
+  attestation: false

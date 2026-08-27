@@ -1,0 +1,78 @@
+name: app-digest-bump
+
+# Generic cloud-driven digest bump: any app repo dispatches `app-image-pushed`
+# with client_payload {app, digest, sha}; this workflow reads apps/<app>/meta.yaml
+# for the image/file-paths and opens a bump PR (gate only when attestation: true).
+# Replaces the astronomy-specific astro-digest-bump.yml (astronomy migrates to the
+# generic event in a later phase; astro-digest-bump.yml is kept, deprecated).
+
+on:
+  repository_dispatch:
+    types: [app-image-pushed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prep:
+    runs-on: ubuntu-latest
+    outputs:
+      app-name: ${{ steps.meta.outputs.app-name }}
+      repo: ${{ steps.meta.outputs.repo }}
+      file-path: ${{ steps.meta.outputs.file-path }}
+      file-paths: ${{ steps.meta.outputs.file-paths }}
+      image-prefix: ${{ steps.meta.outputs.image-prefix }}
+      attestation: ${{ steps.meta.outputs.attestation }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Read app meta + validate dispatch sender
+        id: meta
+        env:
+          APP: ${{ github.event.client_payload.app }}
+          SENDER: ${{ github.event.repository.full_name }}
+        run: |
+          [ -n "$APP" ] || { echo "::error::client_payload.app is required"; exit 1; }
+          META="apps/$APP/meta.yaml"
+          [ -f "$META" ] || { echo "::error::no $META for app '$APP'"; exit 1; }
+          name=$(ruby -ryaml -e "puts YAML.load_file('$META')['app']['name']")
+          repo=$(ruby -ryaml -e "puts YAML.load_file('$META')['app']['repo']")
+          image=$(ruby -ryaml -e "puts YAML.load_file('$META')['app']['image']")
+          attestation=$(ruby -ryaml -e "puts (YAML.load_file('$META')['app']['attestation'] || false).to_s")
+          file_paths=$(ruby -ryaml -e "puts YAML.load_file('$META')['app']['digestFiles'].join(' ')")
+          first_file=$(echo "$file_paths" | cut -d' ' -f1)
+          [ "$SENDER" = "$repo" ] || { echo "::error::dispatch sender $SENDER != meta.repo $repo"; exit 1; }
+          {
+            echo "app-name=$name"
+            echo "repo=$repo"
+            echo "file-path=$first_file"
+            echo "file-paths=$file_paths"
+            echo "image-prefix=image: $image@sha256:"
+            echo "attestation=$attestation"
+          } >> "$GITHUB_OUTPUT"
+
+  gate:
+    needs: prep
+    if: needs.prep.outputs.attestation == 'true'
+    uses: toreau/gh-workflows/.github/workflows/attestation-gate.yml@v1
+    with:
+      owner-repo: ${{ needs.prep.outputs.repo }}
+      digest: ${{ github.event.client_payload.digest }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  bump:
+    needs: [prep, gate]
+    uses: toreau/gh-workflows/.github/workflows/digest-bump.yml@v1
+    with:
+      file-path: ${{ needs.prep.outputs.file-path }}
+      file-paths: ${{ needs.prep.outputs.file-paths }}
+      image-prefix: ${{ needs.prep.outputs.image-prefix }}
+      digest: ${{ github.event.client_payload.digest }}
+      sha: ${{ github.event.client_payload.sha }}
+      commit-message: "${{ needs.prep.outputs.app-name }}: bump image digests to {digest12} (sha {sha7})"
+      open-pr: true
+      head-branch: "bump/${{ needs.prep.outputs.app-name }}-{sha7}"
+      pr-title: "${{ needs.prep.outputs.app-name }}: bump image digests to {digest12} (sha {sha7})"
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
