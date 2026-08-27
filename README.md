@@ -17,7 +17,7 @@ kind cluster (arm64) → Skiperator CRs → operator (host binary) → k8s resou
 - Cluster `kind-skiperator` (k8s **1.34.3**, single node, native **arm64**).
 - Istio **1.30.3** (istiod + custom external ingress gateway), cert-manager **1.21.1** (local CA), MetalLB **0.16.1** (external LB `172.21.255.200`), ArgoCD **10.4.0** (helm), metrics-server **0.9.0**, Skiperator **v2.18.0** (host binary).
 - ArgoCD is **app-of-apps**: root `k8s-apps` (path `argocd/apps`) manages 7 Applications: `astronomy`, `prometheus-platform`, `observability-base`, `grafana`, `cert-sync`, `sample-apps`, `frosta-historielag` (8 apps total). Source is the **public GitHub repo** `toreau/k8s-research` (token in `argocd-repo-secret` is technically optional now, kept for compatibility; added via `argocd repo add`). No local git daemon.
-- **Generic app loop (cloud-driven)**: any app rides the loop via `apps/<app>/meta.yaml` (repo, image, digestFiles, hosts, port, buildType, attestation). The app repo's CI builds a single **arm64** image and attests it inline in its own `ci.yml` (`main-<sha>`, `latest`), then dispatches `app-image-pushed` `{app, sha, digest}` → `app-digest-bump.yml` reads the app's meta (gates the digest only when `attestation: true`) and **opens a PR** (`bump/<app>-{sha7}`) → PR checks (`validate-apps`, `validate-argocd`, `gate-pr`) → **manual review + merge** (branch protection) → ArgoCD auto-syncs from GitHub → the cluster rolls. Reference app: `frosta-historielag` (attested + in-cluster enforced); astronomy rides the same loop, damped. No Mac involvement beyond hosting the cluster. Bump PRs have two human touchpoints: approve the bot's workflow runs, then review + merge.
+- **Generic app loop (cloud-driven)**: any app rides the loop via `apps/<app>/meta.yaml` (repo, image, digestFiles, hosts, port, buildType, attestation). The app repo's CI builds a single **arm64** image and attests it inline in its own `ci.yml` (`main-<sha>`, `latest`), then dispatches `app-image-pushed` `{app, sha, digest}` → `app-digest-bump.yml` reads the app's meta (gates the digest only when `attestation: true`) and **opens a PR** (`bump/<app>-{sha7}`) → PR checks (`validate-apps`, `validate-argocd`, `gate-pr`) → **manual review + merge** (branch protection) → ArgoCD auto-syncs from GitHub → the cluster rolls. The **reference app** (attested + in-cluster enforced) is config-driven (`values-trust-policies.yaml`); astronomy rides the same loop, damped. No Mac involvement beyond hosting the cluster. Bump PRs have two human touchpoints: approve the bot's workflow runs, then review + merge.
 
 ## Repo layout
 
@@ -25,17 +25,17 @@ kind cluster (arm64) → Skiperator CRs → operator (host binary) → k8s resou
 - `argocd/`: helm values + root Application `k8s-apps.yaml` + `apps/*.yaml` (6 Applications)
 - `cluster/`: applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`, `attestations/` (Sigstore Policy Controller + GitHub trust-policies)
 - `testapp/`: UID-150 Go test app
-- `.github/workflows/`: `validate.yml` (kubeconform + yamllint + `gate-pr` digest gate) + `astro-digest-bump.yml` (cloud-driven digest bump via PR)
+- `.github/workflows/`: `validate.yml` (kubeconform + yamllint + `gate-pr` digest gate) + `app-digest-bump.yml` (cloud-driven digest bump via PR, driven by `apps/<app>/meta.yaml`)
 - `scripts/`: `protect-main.sh` (branch protection on main; `make protect-main`)
 
 ## SLSA supply-chain
 
-The astronomy image loop is SLSA-hardened at three layers (all verified end-to-end):
-1. **Producer (astronomy CI):** the merged multi-arch image is attested with SLSA build provenance + an SPDX SBOM (`actions/attest`, `push-to-registry`), and verified before dispatch.
-2. **Consumer gate (k8s-research `astro-digest-bump.yml` + `validate.yml` `gate-pr`):** an unattested digest never lands — the gate runs fail-fast before the PR is opened, and again as a required `gate-pr` PR check (the GitHub attestations API must return a valid SLSA provenance for the digest).
-3. **In-cluster (Sigstore Policy Controller + GitHub `trust-policies`, `cluster/attestations/`):** a pod running an unattested `ghcr.io/toreau/astronomy-api*` image is denied at admission (`ClusterImagePolicy`, cosign keyless; bootstrap with `make policy-controller`).
+The app image loop is SLSA-hardened at three layers (all verified end-to-end):
+1. **Producer (each app's CI):** the single arm64 image is attested **inline in the app's own `ci.yml`** (SLSA build provenance + an SPDX SBOM via `actions/attest`, `push-to-registry`; the signer is the app's own workflow), and verified before dispatch.
+2. **Consumer gate (k8s-research `app-digest-bump.yml` + `validate.yml` `gate-pr`):** an unattested digest never lands for an attested app — the gate runs fail-fast before the PR is opened, and again as a required `gate-pr` PR check (the GitHub attestations API must return a valid SLSA provenance for the digest). Damped apps (attestation: false) skip the gate.
+3. **In-cluster (Sigstore Policy Controller + GitHub `trust-policies`, `cluster/attestations/`):** a pod running an unattested image of the **reference app** (the image allowlist in `values-trust-policies.yaml`) is denied at admission (`ClusterImagePolicy`, organization-based signer; bootstrap with `make policy-controller`).
 
-> **Verification split:** the consumer gate is a *lightweight* check: it verifies only that an attestation exists with an SLSA-provenance predicate (keeping unattested digests out of git). Cryptographic signature verification happens **producer-side** (`gh attestation verify` in the astronomy CI, at build time) and **in-cluster** (Sigstore Policy Controller, fail-closed at admission).
+> **Verification split:** the consumer gate is a *lightweight* check: it verifies only that an attestation exists with an SLSA-provenance predicate (keeping unattested digests out of git). Cryptographic signature verification happens **producer-side** (`gh attestation verify` in each app's CI, at build time) and **in-cluster** (Sigstore Policy Controller, fail-closed at admission).
 
 ## Quick start
 
