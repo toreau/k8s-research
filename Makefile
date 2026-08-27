@@ -105,7 +105,10 @@ policy-controller:
 		helm upgrade trust-policies --install -n artifact-attestations \
 			oci://ghcr.io/github/artifact-attestations-helm-charts/trust-policies --version v0.7.0 \
 			-f cluster/attestations/values-trust-policies.yaml
-	@kubectl --context $(KUBECTX) label ns astronomy policy.sigstore.dev/include=true --overwrite >/dev/null 2>&1 || true
+	# Enforcement is opt-in per namespace: label the namespace of an ATTESTED app
+	# (policy.sigstore.dev/include=true). The reference app (frosta-historielag)
+	# gets labeled at onboarding; astronomy is damped (not labeled, not enforced).
+	@true
 	@kubectl --context $(KUBECTX) -n artifact-attestations rollout status deploy/policy-controller-webhook --timeout=120s >/dev/null 2>&1 || { echo "policy-controller-webhook not ready"; exit 1; }
 	@kubectl --context $(KUBECTX) -n artifact-attestations get trustroot github -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -q True || { echo "trustroot github not Ready"; exit 1; }
 	@echo "== policy-controller: webhook Running + TrustRoot Ready, enforcement on astronomy =="
@@ -183,7 +186,7 @@ status:
 	@echo "== operator =="; pgrep -f 'bin/skiperator' >/dev/null && echo "running" || echo "stopped"
 	@echo "== port-forwards =="; lsof -i :8081 -sTCP:LISTEN >/dev/null 2>&1 && echo "argocd 8081 up" || echo "argocd 8081 down"; lsof -i :8443 -sTCP:LISTEN >/dev/null 2>&1 && echo "istio 8443 up" || echo "istio 8443 down"
 	@echo "== argo apps =="; kubectl -n argocd get applications -o custom-columns='NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status' 2>/dev/null || echo "n/a"
-	@echo "== attestations =="; kubectl --context $(KUBECTX) -n artifact-attestations get deploy policy-controller-webhook --no-headers 2>/dev/null | awk '{print "webhook ready " $$2" ("$$1")"}' | grep . || echo "webhook n/a"; kubectl --context $(KUBECTX) -n artifact-attestations get trustroot github -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}{"\n"}' 2>/dev/null | grep . | sed 's/^/trustroot ready: /' || echo "trustroot n/a"; kubectl --context $(KUBECTX) get ns astronomy -o jsonpath='{.metadata.labels.policy\.sigstore\.dev\/include}{"\n"}' 2>/dev/null | grep . | sed 's/^/astronomy include: /' || echo "astronomy include n/a"
+	@echo "== attestations =="; kubectl --context $(KUBECTX) -n artifact-attestations get deploy policy-controller-webhook --no-headers 2>/dev/null | awk '{print "webhook ready " $$2" ("$$1")"}' | grep . || echo "webhook n/a"; kubectl --context $(KUBECTX) -n artifact-attestations get trustroot github -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}{"\n"}' 2>/dev/null | grep . | sed 's/^/trustroot ready: /' || echo "trustroot n/a"; kubectl --context $(KUBECTX) get ns -l policy.sigstore.dev/include=true -o name 2>/dev/null | sed 's/^/enforced ns: /' | grep . || echo "enforced ns: none"
 
 .PHONY: cluster-delete
 cluster-delete:
