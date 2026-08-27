@@ -26,22 +26,24 @@ jobs:
       attestation: ${{ steps.meta.outputs.attestation }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Read app meta + validate dispatch sender
+      - name: Read app meta
         id: meta
         env:
           APP: ${{ github.event.client_payload.app }}
-          SENDER: ${{ github.event.repository.full_name }}
         run: |
           [ -n "$APP" ] || { echo "::error::client_payload.app is required"; exit 1; }
           META="apps/$APP/meta.yaml"
           [ -f "$META" ] || { echo "::error::no $META for app '$APP'"; exit 1; }
+          # NOTE: the dispatching repo cannot be validated for repository_dispatch —
+          # github.event.repository is the RECEIVING repo (this one), and the sender
+          # repo is not in the payload. Access is gated by dispatch permission on this
+          # repo; the app must map to an existing apps/<app>/meta.yaml (checked above).
           name=$(ruby -ryaml -e "puts YAML.load_file('$META')['app']['name']")
           repo=$(ruby -ryaml -e "puts YAML.load_file('$META')['app']['repo']")
           image=$(ruby -ryaml -e "puts YAML.load_file('$META')['app']['image']")
           attestation=$(ruby -ryaml -e "puts (YAML.load_file('$META')['app']['attestation'] || false).to_s")
           file_paths=$(ruby -ryaml -e "puts YAML.load_file('$META')['app']['digestFiles'].join(' ')")
           first_file=$(echo "$file_paths" | cut -d' ' -f1)
-          [ "$SENDER" = "$repo" ] || { echo "::error::dispatch sender $SENDER != meta.repo $repo"; exit 1; }
           {
             echo "app-name=$name"
             echo "repo=$repo"
