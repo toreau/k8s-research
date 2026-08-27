@@ -59,9 +59,10 @@ jobs:
           # Only resolve against known app directories (allowlist).
           [ -d "apps/$APP" ] && [ -f "apps/$APP/meta.yaml" ] \
             || { echo "::error::no apps/$APP/meta.yaml for app '$APP'"; exit 1; }
-          echo "app-validated=$APP"
+          echo "app-validated=$APP" >> "$GITHUB_OUTPUT"
       - name: Read app meta
         id: meta
+        if: steps.app.outputs.app-validated != ''
         env:
           APP: ${{ steps.app.outputs.app-validated }}
         run: |
