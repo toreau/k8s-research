@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: frosta-historielag
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/toreau/k8s-research.git
+    targetRevision: HEAD
+    path: apps/frosta-historielag
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

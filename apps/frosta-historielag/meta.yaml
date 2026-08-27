@@ -1,0 +1,11 @@
+app:
+  name: frosta-historielag
+  repo: toreau/frosta-historielag.no
+  image: ghcr.io/toreau/frosta-historielag.no
+  digestFiles:
+    - apps/frosta-historielag/app.yaml
+  hosts:
+    - frosta-historielag.no.172.21.255.200.nip.io
+  port: 8080
+  buildType: static
+  attestation: true

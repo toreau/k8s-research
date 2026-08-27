@@ -61,6 +61,14 @@ metadata:
   name: $NAME
 EOF
 
+if [ "$ATTESTATION" = "true" ]; then
+  # Enforce SLSA attestations at admission for this app's namespace (the
+  # trust-policies ClusterImagePolicy applies where this label is present).
+  sed -i '' '/^metadata:/a\
+  labels:\
+    policy.sigstore.dev/include: "true"' "$DIR/infra/namespace.yaml"
+fi
+
 cat > "argocd/apps/$NAME.yaml" <<EOF
 apiVersion: argoproj.io/v1alpha1
 kind: Application

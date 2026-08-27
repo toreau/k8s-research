@@ -1,0 +1,14 @@
+apiVersion: skiperator.kartverket.no/v1alpha1
+kind: Application
+metadata:
+  name: frosta-historielag
+  namespace: frosta-historielag
+spec:
+  image: ghcr.io/toreau/frosta-historielag.no@sha256:6deb9a0100d41623620b80534710e7da92075b15dd281a96814d241d99139b9f
+  port: 8080
+  ingresses:
+    - frosta-historielag.no.172.21.255.200.nip.io
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
