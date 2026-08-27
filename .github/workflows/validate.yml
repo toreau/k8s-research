@@ -24,6 +24,7 @@ jobs:
     outputs:
       digests: ${{ steps.extract.outputs.digests }}
       attested: ${{ steps.extract.outputs.attested }}
+      damped: ${{ steps.extract.outputs.damped }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Extract + verify image digests per app
@@ -31,6 +32,7 @@ jobs:
         run: |
           digests='{}'
           attested='[]'
+          damped='[]'
           for meta in apps/*/meta.yaml; do
             [ -f "$meta" ] || continue
             name=$(ruby -ryaml -e "puts YAML.load_file('$meta')['app']['name']")
@@ -53,10 +55,16 @@ jobs:
             digests=$(echo "$digests" | jq -c --arg a "$name" --arg d "$digest" '. + {($a): $d}')
             if [ "$attestation" = "true" ]; then
               attested=$(echo "$attested" | jq -c --arg a "$name" --arg d "$digest" --arg r "$repo" --arg i "$image" '. + [{app:$a,digest:$d,repo:$r,image:$i}]')
+            else
+              # Damped apps: image->digest binding at the PR boundary (no provenance).
+              # Identity comes from trusted meta.yaml + the PR's actual manifest state,
+              # never from attacker-controlled PR text.
+              damped=$(echo "$damped" | jq -c --arg a "$name" --arg d "$digest" --arg i "$image" '. + [{app:$a,digest:$d,image:$i}]')
             fi
           done
           echo "digests=$digests" >> "$GITHUB_OUTPUT"
           echo "attested=$attested" >> "$GITHUB_OUTPUT"
+          echo "damped=$damped" >> "$GITHUB_OUTPUT"
 
   gate-pr:
     needs: resolve-digest
@@ -71,7 +79,6 @@ jobs:
         run: |
           n=$(echo "$ATTESTED" | jq 'length')
           echo "attested apps: $n"
-          if [ "$n" -eq 0 ]; then echo "no attested apps to gate"; exit 0; fi
           if [ -n "$REG_TOKEN" ]; then
             echo "$REG_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
           fi
@@ -97,3 +104,26 @@ jobs:
               || { echo "::error::$app: attestation verification failed for ${image}@${digest}"; exit 1; }
             echo "$app: strong verification OK (trusted-main provenance)"
           done < <(echo "$ATTESTED" | jq -c '.[]')
+      - name: Gate damped app digests (OCI image->digest binding)
+        env:
+          REG_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          DAMPED: ${{ needs.resolve-digest.outputs.damped }}
+        run: |
+          n=$(echo "$DAMPED" | jq 'length')
+          echo "damped apps: $n"
+          if [ "$n" -eq 0 ]; then echo "no damped apps to gate"; exit 0; fi
+          if [ -n "$REG_TOKEN" ]; then
+            echo "$REG_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
+          fi
+          while read -r entry; do
+            app=$(echo "$entry" | jq -r .app)
+            digest=$(echo "$entry" | jq -r .digest)
+            image=$(echo "$entry" | jq -r .image)
+            echo "gate-pr: binding $app $image@$digest"
+            # Damped apps: registry-native verification that the exact digest exists
+            # under the expected image (OCI repository). Identity comes from trusted
+            # meta.yaml + the PR's actual manifest state, never PR text.
+            docker buildx imagetools inspect "${image}@${digest}" >/dev/null 2>&1 \
+              || { echo "::error::$app: digest ${digest} not found under expected image ${image}"; exit 1; }
+            echo "$app: damped image->digest binding OK"
+          done < <(echo "$DAMPED" | jq -c '.[]')

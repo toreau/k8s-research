@@ -105,6 +105,16 @@ jobs:
             && [ -n "$v" ] && [ -n "$ts" ] && [ -n "$sig" ]; } || {
             echo "::error::missing HMAC-v1 fields (v/app/sha/digest/ts/sig) in client_payload"; exit 1; }
           [ "$v" = "1" ] || { echo "::error::unsupported HMAC-v1 version '$v'"; exit 1; }
+          # ts is UNTRUSTED client_payload. Validate it is decimal digits only BEFORE
+          # any arithmetic expansion (Bash arithmetic would otherwise evaluate
+          # embedded command substitution). Fail closed; this is a freshness check,
+          # not replay protection (downstream promotion is idempotent).
+          case "$ts" in
+            ""|*[!0-9]*)
+              echo "::error::invalid HMAC-v1 timestamp"
+              exit 1
+              ;;
+          esac
           key=$(printf '%s' "$HMAC_KEYS" | jq -r --arg a "$app" '.[$a] // empty')
           [ -n "$key" ] || { echo "::error::no HMAC key configured for app '$app'"; exit 1; }
           now=$(date +%s)
