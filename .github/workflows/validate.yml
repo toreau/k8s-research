@@ -10,6 +10,7 @@ jobs:
     with:
       paths: "apps/"
       schemas-dir: "ci/schemas"
+      exclude: 'apps/.*/meta\.yaml$'
 
   validate-argocd:
     uses: toreau/gh-workflows/.github/workflows/manifest-validate.yml@v1
@@ -48,9 +49,9 @@ jobs:
                 echo "::error::$name: image digests differ ($f=$d vs $digest)"; exit 1
               fi
             done
-            digests=$(echo "$digests" | jq --arg a "$name" --arg d "$digest" '. + {($a): $d}')
+            digests=$(echo "$digests" | jq -c --arg a "$name" --arg d "$digest" '. + {($a): $d}')
             if [ "$attestation" = "true" ]; then
-              attested=$(echo "$attested" | jq --arg a "$name" --arg d "$digest" --arg r "$repo" '. + [{app:$a,digest:$d,repo:$r}]')
+              attested=$(echo "$attested" | jq -c --arg a "$name" --arg d "$digest" --arg r "$repo" '. + [{app:$a,digest:$d,repo:$r}]')
             fi
           done
           echo "digests=$digests" >> "$GITHUB_OUTPUT"
