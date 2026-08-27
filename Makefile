@@ -129,21 +129,53 @@ trust-policies-values:
 protect-main:
 	@./scripts/protect-main.sh
 
-# Sync all ArgoCD apps: parent first, then the 6 apps in dependency order
-# (astronomy; observability-base before prometheus-platform so the monitoring
-# namespace exists; then grafana; cert-sync/sample-apps independent). Apps are
-# automated, so this is mostly a fast confirmation + apply of new commits.
+# Sync all ArgoCD apps except astronomy: parent first, then the 5 apps in
+# dependency order (observability-base before prometheus-platform so the
+# monitoring namespace exists; then grafana; cert-sync/sample-apps independent).
+# Apps are automated, so this is mostly a fast confirmation + apply of new
+# commits. ASTRONOMY IS EXCLUDED: its ingest Jobs carry
+# `argocd.argoproj.io/sync-options: Force=true,Replace=true` (recreated on every
+# sync → re-runs data ingestion), so it is rolled deliberately via
+# `make app-roll NAME=astronomy` (or by auto-sync after a digest-bump merge).
 ARGO_APPS := astronomy observability-base prometheus-platform grafana cert-sync sample-apps
+ARGO_APPS_SYNC := $(filter-out astronomy,$(ARGO_APPS))
 
 .PHONY: argo-sync
 argo-sync:
-	@echo "== argo sync =="
+	@echo "== argo sync (excl. astronomy; roll it via app-roll) =="
 	@argocd app sync k8s-apps >/dev/null 2>&1 || true
-	@for app in $(ARGO_APPS); do \
+	@for app in $(ARGO_APPS_SYNC); do \
 		echo "  syncing $$app"; \
 		argocd app sync $$app >/dev/null 2>&1 || { echo "  $$app: FAIL"; exit 1; }; \
 	done
-	@echo "argo-sync: all 6 apps synced"
+	@echo "argo-sync: 5 apps synced"
+
+# Force-sync one ArgoCD app (delete + re-apply). The generic roll for apps whose
+# jobs carry the Force=true sync option (e.g. astronomy's ingest Jobs).
+.PHONY: app-roll
+app-roll:
+	@[ -n "$(NAME)" ] || { echo "usage: make app-roll NAME=<app>"; exit 1; }
+	@argocd app sync $(NAME) --force >/dev/null 2>&1 || { echo "$(NAME): FAIL"; exit 1; }
+	@echo "app-roll: $(NAME) force-synced"
+
+# HTTPS smoke-test for an app via the istio port-forward.
+.PHONY: app-verify
+app-verify:
+	@[ -n "$(NAME)" ] && [ -n "$(HOST)" ] || { echo "usage: make app-verify NAME=<app> HOST=<host>"; exit 1; }
+	@curl -fsS --cacert /tmp/local-ca.crt --connect-to $(HOST):443:127.0.0.1:8443 https://$(HOST)/ >/dev/null \
+		&& echo "app-verify: https://$(HOST)/ OK" || { echo "app-verify: FAIL"; exit 1; }
+
+# Scaffold a new app (see apps/README.md): generates apps/<name>/, meta.yaml and
+# the ArgoCD Application, patches namespace-exclusions and drops the stale
+# default-deny. Commit + push, then `make app-roll NAME=<name>`.
+.PHONY: app-onboard
+app-onboard:
+	@[ -n "$(NAME)" ] && [ -n "$(IMAGE)" ] && [ -n "$(HOST)" ] && [ -n "$(PORT)" ] && [ -n "$(REPO)" ] \
+		|| { echo "usage: make app-onboard NAME=<name> IMAGE=<ref incl. digest> HOST=<host> PORT=<port> REPO=<owner/repo> [BUILD_TYPE=…] [ATTESTATION=…]"; exit 1; }
+	@./scripts/app-onboard.sh "$(NAME)" "$(IMAGE)" "$(HOST)" "$(PORT)" "$(REPO)" "$(BUILD_TYPE)" "$(ATTESTATION)"
+	@kubectl --context $(KUBECTX) -n skiperator-system patch cm namespace-exclusions --type merge -p "{\"data\":{\"$(NAME)\":\"true\"}}" >/dev/null 2>&1 || true
+	@kubectl --context $(KUBECTX) -n $(NAME) delete networkpolicy default-deny --ignore-not-found >/dev/null 2>&1 || true
+	@echo "== app-onboard: commit + push apps/$(NAME)/ argocd/apps/$(NAME).yaml, then make app-roll NAME=$(NAME) =="
 
 .PHONY: status
 status:
@@ -242,7 +274,7 @@ astronomy:
 	@kubectl --context $(KUBECTX) -n skiperator-system patch cm namespace-exclusions --type merge -p '{"data":{"astronomy-db":"true"}}' >/dev/null 2>&1 || true
 	@kubectl --context $(KUBECTX) -n astronomy-db delete networkpolicy default-deny --ignore-not-found >/dev/null 2>&1 || true
 	@$(MAKE) astronomy-secrets
-	@echo "-- argo sync --"; argocd app sync k8s-apps >/dev/null 2>&1 || true
+	@echo "-- argo sync --"; argocd app sync k8s-apps >/dev/null 2>&1 || true; argocd app sync astronomy --force >/dev/null 2>&1 || true
 	@echo "-- wait postgres --"; kubectl --context $(KUBECTX) -n astronomy-db rollout status deploy/astronomy-db --timeout=180s >/dev/null 2>&1 || { echo "postgres not ready"; exit 1; }
 	@$(MAKE) astronomy-ingest-wait
 	@echo "-- wait astronomy-api --"; kubectl --context $(KUBECTX) -n astronomy rollout status deploy/astronomy-api --timeout=300s >/dev/null 2>&1 || { echo "astronomy-api not ready"; exit 1; }
