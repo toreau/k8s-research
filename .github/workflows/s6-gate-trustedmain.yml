@@ -1,0 +1,26 @@
+# S6.1 evidence (temporary): trusted-main policy through the REAL S6 gate.
+# Same frozen strong policy as s6-gate-positive but with source-digest OMITTED
+# (final trusted-main semantics; rollback). Expected: success.
+name: s6-gate-trustedmain
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    uses: toreau/gh-workflows/.github/workflows/attestation-gate.yml@d31696bf041c1462f2b5fd6fcf9b557b6b1e7894
+    with:
+      owner-repo: toreau/frosta-historielag.no
+      digest: sha256:785a25108d229e91a6d84bdb82b5ba6eb951fd509cf5bd4a8b464753b393fe51
+      image: ghcr.io/toreau/frosta-historielag.no
+      signer-workflow: toreau/gh-workflows/.github/workflows/container-build-attest.yml
+      source-ref: refs/heads/main
+      trusted-signer-digests-json: '["373df7517487bd20ac55a0986926677c0ddcbcf6"]'
+      require-signer-digest: true
+      deny-self-hosted-runners: true
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+      registry-token: ${{ secrets.GHCR_TOKEN }}
