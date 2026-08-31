@@ -45,8 +45,8 @@ body() {
     ]}'
 }
 
-existing=$(gh api "repos/${repo}/rulesets" --jq --arg n "$name" \
-  '.[] | select(.name==$n and .target=="branch") | .id' 2>/dev/null || true)
+existing=$(gh api "repos/${repo}/rulesets" --jq \
+  '.[] | select(.name=="main-protection" and .target=="branch") | .id' 2>/dev/null || true)
 
 if [ -n "$existing" ]; then
   echo "updating ruleset $existing ($name) on $repo"
