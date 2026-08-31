@@ -4,7 +4,7 @@ metadata:
   name: frosta-historielag
   namespace: frosta-historielag
 spec:
-  image: ghcr.io/toreau/frosta-historielag.no@sha256:2cc3ecec3c0339ebaa351f477190fe150dab51f07b2216e8cce0b4b086ebbad2
+  image: ghcr.io/toreau/frosta-historielag.no@sha256:89940b8d540836923763296bde4f70efdfd3b8184c5598aec1005b05681a36f4
   port: 8080
   ingresses:
     - frosta-historielag.no.172.21.255.200.nip.io
