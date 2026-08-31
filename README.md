@@ -26,7 +26,7 @@ kind cluster (arm64) → Skiperator CRs → operator (host binary) → k8s resou
 - `cluster/`: applied directly: `metallb/`, `istio-gateways/`, `metrics-server/`, `attestations/` (Sigstore Policy Controller + GitHub trust-policies)
 - `testapp/`: UID-150 Go test app
 - `.github/workflows/`: `validate.yml` (kubeconform + yamllint + `gate-pr` digest gate) + `app-digest-bump.yml` (cloud-driven digest bump via PR, driven by `apps/<app>/meta.yaml`)
-- `scripts/`: `protect-main.sh` (branch protection on main; `make protect-main`)
+- `scripts/`: `protect-main.sh` (ruleset-based protection of main: PRs + validate-apps/validate-argocd/gate-pr checks, no direct push, admin PR-only bypass; `make protect-main`)
 
 ## SLSA supply-chain
 
@@ -47,7 +47,7 @@ make argo-sync     # sync all ArgoCD apps (root + 6, in order)
 make cluster       # fresh kind cluster + platform (skiperator: make setup-local)
 make astronomy     # bootstrap the astronomy demo end-to-end (idempotent); astronomy-verify
 make observability # Prometheus + Grafana (monitoring ns); pf-grafana
-make protect-main  # branch protection on main (required checks + 1 review)
+make protect-main  # ruleset on main: PR + checks, no direct push, admin PR-only bypass
 ```
 
 - ArgoCD UI: http://127.0.0.1:8081 · admin pw: `/tmp/argocd-admin.txt`

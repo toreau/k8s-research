@@ -28,7 +28,7 @@ help:
 	@echo "  make astronomy-verify   smoke-test the astronomy demo (fail-fast)"
 	@echo "  make observability   bootstrap Prometheus+Grafana (exclusions, sync, pf-grafana)"
 	@echo "  make policy-controller  bootstrap Sigstore Policy Controller + GitHub trust-policies (attestation enforcement)"
-	@echo "  make protect-main    protect main: require PRs + validate/argocd/gate-pr checks + 1 review"
+	@echo "  make protect-main    protect main: ruleset (PRs + validate/argocd/gate-pr checks, no direct push, admin PR-only bypass)"
 	@echo "  make pf-grafana      port-forwards: Grafana 3000, Prometheus 9090"
 
 .PHONY: cluster
@@ -125,9 +125,11 @@ trust-policies-values:
 	@kubectl --context $(KUBECTX) -n artifact-attestations get clusterimagepolicy github-policy -o jsonpath='{range .spec.authorities[*].keyless.identities[*]}{.subjectRegExp}{"\n"}{end}' 2>/dev/null | sed 's/^/subjectRegExp now: /' || true
 	@echo "== trust-policies re-applied =="
 
-# Protect main (GitOps guardrails): require PRs with the validate-apps/validate-argocd/
-# gate-pr checks + 1 review before merge. Idempotent PUT; needs `gh` authenticated.
-# enforce_admins=false so the admin can still hotfix main directly.
+# Protect main (GitOps guardrails): ruleset requiring PRs with the
+# validate-apps/validate-argocd/gate-pr checks + 1 review before merge.
+# No direct push to main for anyone; admin has an explicit PR-only bypass
+# (PR-spor beholdes, direkte push er ikke en bypass-mekanisme). Idempotent;
+# needs `gh` authenticated.
 .PHONY: protect-main
 protect-main:
 	@./scripts/protect-main.sh
