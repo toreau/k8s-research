@@ -45,8 +45,14 @@ jobs:
       file-paths: ${{ steps.meta.outputs.file-paths }}
       image-prefix: ${{ steps.meta.outputs.image-prefix }}
       attestation: ${{ steps.meta.outputs.attestation }}
+      builder-workflow: ${{ steps.trust.outputs.workflow }}
+      revisions-json: ${{ steps.trust.outputs.revisions-json }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Trust policy (ci/trusted-builders.yaml + parser) must come from the
+          # EXACT commit this dispatch run executes on — never a later moved main.
+          ref: ${{ github.sha }}
       - name: Validate app identifier (allowlist, before any path dereference)
         id: app
         env:
@@ -82,6 +88,19 @@ jobs:
             echo "image-prefix=image: $image@sha256:"
             echo "attestation=$attestation"
           } >> "$GITHUB_OUTPUT"
+      - name: Read trusted builder policy (attested apps only)
+        id: trust
+        if: steps.meta.outputs.attestation == 'true'
+        run: |
+          set -euo pipefail
+          T=$(ruby ci/scripts/trusted-builders.rb)
+          WORKFLOW=$(printf '%s' "$T" | jq -r .workflow)
+          REVISIONS=$(printf '%s' "$T" | jq -c .revisions)
+          {
+            echo "workflow=$WORKFLOW"
+            echo "revisions-json=$REVISIONS"
+          } >> "$GITHUB_OUTPUT"
+          echo "trusted builder policy: $WORKFLOW revs=$REVISIONS"
 
   auth:
     needs: prep
@@ -152,14 +171,17 @@ jobs:
   gate:
     needs: [prep, auth]
     if: needs.prep.outputs.attestation == 'true'
-    uses: toreau/gh-workflows/.github/workflows/attestation-gate.yml@v1
+    uses: toreau/gh-workflows/.github/workflows/attestation-gate.yml@d31696bf041c1462f2b5fd6fcf9b557b6b1e7894
     with:
       owner-repo: ${{ needs.prep.outputs.repo }}
       digest: ${{ github.event.client_payload.digest }}
       image: ${{ needs.prep.outputs.image }}
-      # signer-workflow carries the repo identity (full owner/repo path);
-      # signer-repo is NOT passed (mutually exclusive flags).
-      signer-workflow: "${{ needs.prep.outputs.repo }}/.github/workflows/ci.yml"
+      # Trusted generic builder workflow + explicit trusted revision set from
+      # ci/trusted-builders.yaml (validated parser). No app-local signer.
+      signer-workflow: ${{ needs.prep.outputs.builder-workflow }}
+      trusted-signer-digests-json: ${{ needs.prep.outputs.revisions-json }}
+      require-signer-digest: true
+      deny-self-hosted-runners: true
       source-ref: "refs/heads/main"
       source-digest: ${{ github.event.client_payload.sha }}
     secrets:

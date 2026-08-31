@@ -25,6 +25,8 @@ jobs:
       digests: ${{ steps.extract.outputs.digests }}
       attested: ${{ steps.extract.outputs.attested }}
       damped: ${{ steps.extract.outputs.damped }}
+      has-attested: ${{ steps.extract.outputs.has-attested }}
+      has-damped: ${{ steps.extract.outputs.has-damped }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Extract + verify image digests per app
@@ -33,6 +35,8 @@ jobs:
           digests='{}'
           attested='[]'
           damped='[]'
+          has_attested=false
+          has_damped=false
           for meta in apps/*/meta.yaml; do
             [ -f "$meta" ] || continue
             name=$(ruby -ryaml -e "puts YAML.load_file('$meta')['app']['name']")
@@ -55,55 +59,79 @@ jobs:
             digests=$(echo "$digests" | jq -c --arg a "$name" --arg d "$digest" '. + {($a): $d}')
             if [ "$attestation" = "true" ]; then
               attested=$(echo "$attested" | jq -c --arg a "$name" --arg d "$digest" --arg r "$repo" --arg i "$image" '. + [{app:$a,digest:$d,repo:$r,image:$i}]')
+              has_attested=true
             else
               # Damped apps: image->digest binding at the PR boundary (no provenance).
               # Identity comes from trusted meta.yaml + the PR's actual manifest state,
               # never from attacker-controlled PR text.
               damped=$(echo "$damped" | jq -c --arg a "$name" --arg d "$digest" --arg i "$image" '. + [{app:$a,digest:$d,image:$i}]')
+              has_damped=true
             fi
           done
-          echo "digests=$digests" >> "$GITHUB_OUTPUT"
-          echo "attested=$attested" >> "$GITHUB_OUTPUT"
-          echo "damped=$damped" >> "$GITHUB_OUTPUT"
+          {
+            echo "digests=$digests"
+            echo "attested=$attested"
+            echo "damped=$damped"
+            echo "has-attested=$has_attested"
+            echo "has-damped=$has_damped"
+          } >> "$GITHUB_OUTPUT"
 
-  gate-pr:
+  trust-config:
     needs: resolve-digest
+    if: needs.resolve-digest.outputs.has-attested == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      builder-workflow: ${{ steps.trust.outputs.workflow }}
+      revisions-json: ${{ steps.trust.outputs.revisions-json }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Trust policy (ci/trusted-builders.yaml + parser) MUST come from the
+          # PR's trusted BASE commit, never from PR head/merge-ref/PR working tree.
+          # PR-controlled content can never define the trust policy that
+          # authorizes that same PR.
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+      - name: Read trusted builder policy (attested apps only)
+        id: trust
+        run: |
+          set -euo pipefail
+          T=$(ruby ci/scripts/trusted-builders.rb)
+          WORKFLOW=$(printf '%s' "$T" | jq -r .workflow)
+          REVISIONS=$(printf '%s' "$T" | jq -c .revisions)
+          {
+            echo "workflow=$WORKFLOW"
+            echo "revisions-json=$REVISIONS"
+          } >> "$GITHUB_OUTPUT"
+          echo "trusted builder policy: $WORKFLOW revs=$REVISIONS"
+
+  gate-attested:
+    needs: [resolve-digest, trust-config]
+    if: needs.resolve-digest.outputs.has-attested == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.resolve-digest.outputs.attested) }}
+    uses: toreau/gh-workflows/.github/workflows/attestation-gate.yml@d31696bf041c1462f2b5fd6fcf9b557b6b1e7894
+    with:
+      owner-repo: ${{ matrix.app.repo }}
+      digest: ${{ matrix.app.digest }}
+      image: ${{ matrix.app.image }}
+      signer-workflow: ${{ needs.trust-config.outputs.builder-workflow }}
+      trusted-signer-digests-json: ${{ needs.trust-config.outputs.revisions-json }}
+      require-signer-digest: true
+      deny-self-hosted-runners: true
+      source-ref: "refs/heads/main"
+      # NO source-digest: final promotion is trusted-main (rollback allowed),
+      # independent of dispatch payload state.
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+      registry-token: ${{ secrets.GHCR_TOKEN }}
+
+  gate-damped:
+    needs: resolve-digest
+    if: needs.resolve-digest.outputs.has-damped == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4.3.0
-      - name: Gate attested app digests (strong consumer-side verification)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REG_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          ATTESTED: ${{ needs.resolve-digest.outputs.attested }}
-        run: |
-          n=$(echo "$ATTESTED" | jq 'length')
-          echo "attested apps: $n"
-          if [ -n "$REG_TOKEN" ]; then
-            echo "$REG_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
-          fi
-          while read -r entry; do
-            app=$(echo "$entry" | jq -r .app)
-            digest=$(echo "$entry" | jq -r .digest)
-            repo=$(echo "$entry" | jq -r .repo)
-            image=$(echo "$entry" | jq -r .image)
-            echo "gate-pr: verifying $app $image@$digest"
-            # Strong mode: cryptographic verification of the OCI attestation bundle,
-            # bound to the expected repo + signer workflow + source ref.
-            # NOTE: no --source-digest here — a direct PR has no independently trusted
-            # expected source SHA. This is "trusted-main provenance" (an older but
-            # valid main artifact may be promoted, enabling rollback).
-            # signer-repo and signer-workflow are mutually exclusive; the workflow
-            # path carries the repo identity.
-            gh attestation verify "oci://${image}@${digest}" \
-              --repo "$repo" \
-              --bundle-from-oci \
-              --signer-workflow "${repo}/.github/workflows/ci.yml" \
-              --source-ref "refs/heads/main" \
-              --predicate-type "https://slsa.dev/provenance/v1" \
-              || { echo "::error::$app: attestation verification failed for ${image}@${digest}"; exit 1; }
-            echo "$app: strong verification OK (trusted-main provenance)"
-          done < <(echo "$ATTESTED" | jq -c '.[]')
       - name: Gate damped app digests (OCI image->digest binding)
         env:
           REG_TOKEN: ${{ secrets.GHCR_TOKEN }}
@@ -119,7 +147,7 @@ jobs:
             app=$(echo "$entry" | jq -r .app)
             digest=$(echo "$entry" | jq -r .digest)
             image=$(echo "$entry" | jq -r .image)
-            echo "gate-pr: binding $app $image@$digest"
+            echo "gate-damped: binding $app $image@$digest"
             # Damped apps: registry-native verification that the exact digest exists
             # under the expected image (OCI repository). Identity comes from trusted
             # meta.yaml + the PR's actual manifest state, never PR text.
@@ -127,3 +155,38 @@ jobs:
               || { echo "::error::$app: digest ${digest} not found under expected image ${image}"; exit 1; }
             echo "$app: damped image->digest binding OK"
           done < <(echo "$DAMPED" | jq -c '.[]')
+
+  gate-pr:
+    needs: [resolve-digest, trust-config, gate-attested, gate-damped]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate required checks (fail-closed on success/skipped/failure/cancelled)
+        env:
+          RD: ${{ needs.resolve-digest.result }}
+          HAS_ATTESTED: ${{ needs.resolve-digest.outputs.has-attested }}
+          HAS_DAMPED: ${{ needs.resolve-digest.outputs.has-damped }}
+          TC: ${{ needs.trust-config.result }}
+          GA: ${{ needs.gate-attested.result }}
+          GD: ${{ needs.gate-damped.result }}
+        run: |
+          set -euo pipefail
+          expect() {
+            local name="$1" actual="$2" want="$3"
+            echo "check $name: result=$actual (expected $want)"
+            [ "$actual" = "$want" ] || { echo "::error::$name result=$actual, expected $want"; exit 1; }
+          }
+          [ "$RD" = "success" ] || { echo "::error::resolve-digest must succeed"; exit 1; }
+          if [ "$HAS_ATTESTED" = "true" ]; then
+            expect "trust-config" "$TC" "success"
+            expect "gate-attested" "$GA" "success"
+          else
+            expect "trust-config" "$TC" "skipped"
+            expect "gate-attested" "$GA" "skipped"
+          fi
+          if [ "$HAS_DAMPED" = "true" ]; then
+            expect "gate-damped" "$GD" "success"
+          else
+            expect "gate-damped" "$GD" "skipped"
+          fi
+          echo "gate-pr: all required promotion checks passed"
