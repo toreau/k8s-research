@@ -25,9 +25,9 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
-      revisions-json: ${{ steps.p.outputs.revisions-json }}
-      source-digest: ${{ steps.p.outputs.source-digest }}
-      require: ${{ steps.p.outputs.require }}
+      revisions_json: ${{ steps.p.outputs.revisions_json }}
+      source_digest: ${{ steps.p.outputs.source_digest }}
+      require_rev: ${{ steps.p.outputs.require_rev }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Resolve case parameters (trust file + S4 evidence)
@@ -49,9 +49,9 @@ jobs:
             *) echo "::error::unknown case"; exit 1 ;;
           esac
           {
-            echo "revisions-json=$REVS"
-            echo "source-digest=$SRC_DIGEST"
-            echo "require=$REQUIRE"
+            echo "revisions_json=$REVS"
+            echo "source_digest=$SRC_DIGEST"
+            echo "require_rev=$REQUIRE"
           } >> "$GITHUB_OUTPUT"
 
   gate:
@@ -63,9 +63,9 @@ jobs:
       image: ghcr.io/toreau/frosta-historielag.no
       signer-workflow: toreau/gh-workflows/.github/workflows/container-build-attest.yml
       source-ref: refs/heads/main
-      source-digest: ${{ needs.prepare.outputs.source-digest }}
-      trusted-signer-digests-json: ${{ needs.prepare.outputs.revisions-json }}
-      require-signer-digest: ${{ needs.prepare.outputs.require }}
+      source-digest: ${{ needs.prepare.outputs.source_digest }}
+      trusted-signer-digests-json: ${{ needs.prepare.outputs.revisions_json }}
+      require-signer-digest: ${{ needs.prepare.outputs.require_rev }}
       deny-self-hosted-runners: true
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
