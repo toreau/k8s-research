@@ -1,0 +1,8 @@
+version: 1
+
+builders:
+  container:
+    workflow: toreau/gh-workflows/.github/workflows/container-build-attest.yml
+    revisions:
+      - sha: 373df7517487bd20ac55a0986926677c0ddcbcf6
+        comment: "S3.1/S4 verified 2026-08-31 (builder signer revision)"

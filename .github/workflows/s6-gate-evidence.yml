@@ -1,0 +1,72 @@
+# S6 evidence (temporary): exercises the generic attestation-gate revision
+# mode against the accepted S4 artifact, one case per workflow run.
+# workflow_dispatch only. No production effect: no PR, no dispatch, no K8s.
+name: s6-gate-evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      case:
+        description: Evidence case (trusted-single|trusted-main|legacy|empty-revisions|wrong-revision|wrong-source-digest)
+        required: true
+        type: choice
+        options:
+          - trusted-single
+          - trusted-main
+          - legacy
+          - empty-revisions
+          - wrong-revision
+          - wrong-source-digest
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      revisions-json: ${{ steps.p.outputs.revisions-json }}
+      source-digest: ${{ steps.p.outputs.source-digest }}
+      require: ${{ steps.p.outputs.require }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Resolve case parameters (trust file + S4 evidence)
+        id: p
+        env:
+          CASE: ${{ github.event.inputs.case }}
+        run: |
+          set -euo pipefail
+          REVS=$(ruby ci/scripts/trusted-builders.rb | jq -c '.revisions')
+          SRC_DIGEST=ab0e7297ce1b7ca56526f7c98de2e7cd31e60cc1
+          REQUIRE=false
+          case "$CASE" in
+            trusted-single) ;;
+            trusted-main) SRC_DIGEST="" ;;
+            legacy) REVS="" ;;
+            empty-revisions) REVS="[]"; REQUIRE=true ;;
+            wrong-revision) REVS='["2222222222222222222222222222222222222222"]' ;;
+            wrong-source-digest) SRC_DIGEST=0000000000000000000000000000000000000000 ;;
+            *) echo "::error::unknown case"; exit 1 ;;
+          esac
+          {
+            echo "revisions-json=$REVS"
+            echo "source-digest=$SRC_DIGEST"
+            echo "require=$REQUIRE"
+          } >> "$GITHUB_OUTPUT"
+
+  gate:
+    needs: prepare
+    uses: toreau/gh-workflows/.github/workflows/attestation-gate.yml@d31696bf041c1462f2b5fd6fcf9b557b6b1e7894
+    with:
+      owner-repo: toreau/frosta-historielag.no
+      digest: sha256:785a25108d229e91a6d84bdb82b5ba6eb951fd509cf5bd4a8b464753b393fe51
+      image: ghcr.io/toreau/frosta-historielag.no
+      signer-workflow: toreau/gh-workflows/.github/workflows/container-build-attest.yml
+      source-ref: refs/heads/main
+      source-digest: ${{ needs.prepare.outputs.source-digest }}
+      trusted-signer-digests-json: ${{ needs.prepare.outputs.revisions-json }}
+      require-signer-digest: ${{ needs.prepare.outputs.require }}
+      deny-self-hosted-runners: true
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+      registry-token: ${{ secrets.GHCR_TOKEN }}
