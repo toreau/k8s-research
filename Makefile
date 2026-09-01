@@ -134,15 +134,15 @@ trust-policies-values:
 protect-main:
 	@./scripts/protect-main.sh
 
-# Sync all ArgoCD apps except astronomy: parent first, then the 5 apps in
+# Sync all ArgoCD apps except astronomy: parent first, then the 6 apps in
 # dependency order (observability-base before prometheus-platform so the
-# monitoring namespace exists; then grafana; cert-sync/sample-apps independent).
+# monitoring namespace exists; then grafana; cert-sync/sample-apps/frosta-historielag independent).
 # Apps are automated, so this is mostly a fast confirmation + apply of new
 # commits. ASTRONOMY IS EXCLUDED: its ingest Jobs carry
 # `argocd.argoproj.io/sync-options: Force=true,Replace=true` (recreated on every
 # sync → re-runs data ingestion), so it is rolled deliberately via
 # `make app-roll NAME=astronomy` (or by auto-sync after a digest-bump merge).
-ARGO_APPS := astronomy observability-base prometheus-platform grafana cert-sync sample-apps
+ARGO_APPS := astronomy observability-base prometheus-platform grafana cert-sync sample-apps frosta-historielag
 ARGO_APPS_SYNC := $(filter-out astronomy,$(ARGO_APPS))
 
 .PHONY: argo-sync
@@ -153,7 +153,7 @@ argo-sync:
 		echo "  syncing $$app"; \
 		argocd app sync $$app >/dev/null 2>&1 || { echo "  $$app: FAIL"; exit 1; }; \
 	done
-	@echo "argo-sync: 5 apps synced"
+	@echo "argo-sync: 6 apps synced"
 
 # Force-sync one ArgoCD app (delete + re-apply). The generic roll for apps whose
 # jobs carry the Force=true sync option (e.g. astronomy's ingest Jobs).
