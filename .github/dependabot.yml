@@ -5,6 +5,8 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "toreau/gh-workflows/.github/workflows/attestation-gate.yml"
     groups:
       github-actions:
         patterns:
