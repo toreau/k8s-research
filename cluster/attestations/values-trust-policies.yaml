@@ -2,20 +2,18 @@
 # (oci://ghcr.io/github/artifact-attestations-helm-charts/trust-policies, v0.7.0).
 # Enforces SLSA-provenance attestations on the images in `policy.images` (the
 # reference app, frosta-historielag.no), in namespaces labeled
-# policy.sigstore.dev/include=true. Signer validation is ORGANIZATION-based
-# (organization: toreau, repository: '.*'): any workflow in the toreau org
-# (a personal account — i.e. our own repos) may sign. Per-app provenance still
-# exists in the attestation SAN: each app attests inline in its own ci.yml, so
-# the subject carries <repo>/.github/workflows/ci.yml@refs/heads/main.
-# `policy.images` is an explicit allowlist; the exempt policy covers the istio
-# init/proxy images (registry.istio.io proxyv2) used in pods.
+# policy.sigstore.dev/include=true. Admission signer identity is restricted to
+# the trusted central reusable container-build-attest workflow; the allowed
+# signer revisions correspond to the canonical promotion trust set in
+# ci/trusted-builders.yaml (consistency enforced by ci/scripts/admission-trust.rb).
+# `policy.images` is an explicit image allowlist; the exempt policy covers the
+# istio init/proxy images (registry.istio.io proxyv2) used in pods.
 # `trust.github` + `trust.sigstorePublic` stay true (default): the GitHub
 # trust-root authority does not yet verify our rekor-logged bundles, so the
 # public-good authority does the actual enforcement (S1 finding).
 policy:
   enabled: true
-  organization: toreau
-  repository: '.*'
+  subjectRegExp: '^https://github[.]com/toreau/gh-workflows/[.]github/workflows/container-build-attest[.]yml@373df7517487bd20ac55a0986926677c0ddcbcf6$'
   images:
     - "ghcr.io/toreau/frosta-historielag.no**"
   exemptImages:

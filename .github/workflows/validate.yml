@@ -156,8 +156,18 @@ jobs:
             echo "$app: damped image->digest binding OK"
           done < <(echo "$DAMPED" | jq -c '.[]')
 
+  admission-trust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Validate admission signer policy vs promotion trust set
+        run: |
+          # CONFIGURATION CONSISTENCY only (candidate tree, no network).
+          # Promotion authorization stays base-derived in trust-config.
+          ruby ci/scripts/admission-trust.rb
+
   gate-pr:
-    needs: [resolve-digest, trust-config, gate-attested, gate-damped]
+    needs: [resolve-digest, trust-config, gate-attested, gate-damped, admission-trust]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -169,6 +179,7 @@ jobs:
           TC: ${{ needs.trust-config.result }}
           GA: ${{ needs.gate-attested.result }}
           GD: ${{ needs.gate-damped.result }}
+          AT: ${{ needs.admission-trust.result }}
         run: |
           set -euo pipefail
           expect() {
@@ -177,6 +188,7 @@ jobs:
             [ "$actual" = "$want" ] || { echo "::error::$name result=$actual, expected $want"; exit 1; }
           }
           [ "$RD" = "success" ] || { echo "::error::resolve-digest must succeed"; exit 1; }
+          expect "admission-trust" "$AT" "success"
           if [ "$HAS_ATTESTED" = "true" ]; then
             expect "trust-config" "$TC" "success"
             expect "gate-attested" "$GA" "success"
