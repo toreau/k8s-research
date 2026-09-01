@@ -21,7 +21,7 @@ spec:
         fsGroup: 10001
       containers:
         - name: ingest
-          image: ghcr.io/toreau/astronomy-api@sha256:de1ff94ebfc79e325d95954537009ca5693b4948e7037b7bb32c4eafeed298cf
+          image: ghcr.io/toreau/astronomy-api@sha256:9fb90cadefe061ae5427fb6f294bbba6d93349ccacd2cb584d3ce7e17df976fd
           command:
             - /bin/sh
             - -c
