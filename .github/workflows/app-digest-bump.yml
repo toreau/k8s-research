@@ -194,7 +194,7 @@ jobs:
     # auth+prep are always required. Run when gate is SKIPPED (attestation:false)
     # or SUCCESS, but NOT when any needed job failed.
     if: ${{ !cancelled() && needs.auth.result == 'success' && needs.bind.result == 'success' && needs.gate.result != 'failure' }}
-    uses: toreau/gh-workflows/.github/workflows/digest-bump.yml@v1
+    uses: toreau/gh-workflows/.github/workflows/digest-bump.yml@19c65c9683f649cab7d3831a3bbc66451e756ebe
     with:
       file-path: ${{ needs.prep.outputs.file-path }}
       file-paths: ${{ needs.prep.outputs.file-paths }}
