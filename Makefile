@@ -111,7 +111,7 @@ policy-controller:
 	@true
 	@kubectl --context $(KUBECTX) -n artifact-attestations rollout status deploy/policy-controller-webhook --timeout=120s >/dev/null 2>&1 || { echo "policy-controller-webhook not ready"; exit 1; }
 	@kubectl --context $(KUBECTX) -n artifact-attestations get trustroot github -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -q True || { echo "trustroot github not Ready"; exit 1; }
-	@echo "== policy-controller: webhook Running + TrustRoot Ready, enforcement on astronomy =="
+	@echo "== policy-controller: webhook Running + TrustRoot Ready, enforcement on frosta-historielag (reference app) =="
 
 # Re-apply trust-policies values (e.g. after a subjectRegExp change). Unlike
 # `make policy-controller`, this is NOT install-once-gated: a plain `helm upgrade`
