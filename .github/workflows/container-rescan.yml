@@ -31,6 +31,8 @@ name: container-rescan
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "22 4 * * *"
 
 concurrency:
   group: container-rescan
