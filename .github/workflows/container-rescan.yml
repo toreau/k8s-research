@@ -1,9 +1,8 @@
 # container-rescan
 #
-# Scheduled-style reevaluation of the DESIRED container IMAGE@DIGEST state in
-# this GitOps repo (k8s-research). APPSEC-04.1 ships this workflow
-# dispatch-only; the cron schedule is added in a later slice AFTER the desired
-# baseline is proven green.
+# Scheduled reevaluation of the DESIRED container IMAGE@DIGEST state in this
+# GitOps repo (k8s-research), daily at 04:22 UTC, plus manual
+# workflow_dispatch.
 #
 # Scope and invariants:
 #   - Security object = the exact immutable digest currently selected on the
