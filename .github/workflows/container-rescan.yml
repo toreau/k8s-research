@@ -76,7 +76,7 @@ jobs:
             curl -fsSL --max-time 30 -H "Authorization: Bearer $tok" \
               -H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json' \
               -D - -o /dev/null "https://ghcr.io/v2/${regrepo}/manifests/${digest}" 2>/dev/null \
-              | grep -i '^content-type:' | tr -d '\r' | sed 's/^[Cc]ontent-[Tt]ype:[[:space:]]*//'
+              | grep -i '^content-type:' | tr -d '\r' | sed 's/^[Cc]ontent-[Tt]ype:[[:space:]]*//' || true
           }
 
           targets='[]'
@@ -182,7 +182,8 @@ jobs:
           fi
 
           existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --label container-rescan --state open \
-            --json number --jq '.[0].number // empty')
+            --json number --jq '.[0].number // empty' || true)
+          [ -n "$existing" ] || existing=""
 
           if [ "$green" = "true" ]; then
             echo "evaluation green for all scanner-eligible desired artifacts"
@@ -193,21 +194,28 @@ jobs:
             exit 0
           fi
 
-          summary_text="$SUMMARY"
-          ineligible_text=$(echo "$INELIGIBLE" | jq -r '.[] | "- " + .app + " " + .image + "@" + .digest + " (" + .reason + ")"')
           body_file="$RUNNER_TEMP/issue-body.txt"
-          {
-            printf 'APPSEC-04 desired-state container reevaluation is NOT green.\n'
-            printf '\n'
-            printf 'Run: %s\n' "$RUN_URL"
-            printf '\n'
-            printf 'Desired-state inventory (default branch): %s\n' "$summary_text"
-            printf '\n'
-            printf 'Scanner-eligible targets are evaluated by container-scan@5de3d944.\n'
-            printf 'Scanner-ineligible (in-scope, reported, not failed):\n%s\n' "$ineligible_text"
-            printf '\n'
-            printf 'Generic failure signal (policy finding or scanner/DB/registry inability to evaluate). Inspect the run. No automatic remediation occurs.\n'
-          } > "$body_file"
+          if [ "$INVENTORY_RESULT" != "success" ]; then
+            {
+              printf 'APPSEC-04 desired-state container reevaluation FAILED at the inventory step.\n'
+              printf '\nRun: %s\n' "$RUN_URL"
+              printf '\nNo desired-state targets could be enumerated. Inspect the run.\n'
+            } > "$body_file"
+          else
+            summary_text="$SUMMARY"
+            ineligible_text="(none)"
+            if [ -n "$INELIGIBLE" ] && [ "$INELIGIBLE" != "[]" ]; then
+              ineligible_text=$(echo "$INELIGIBLE" | jq -r '.[] | "- " + .app + " " + .image + "@" + .digest + " (" + .reason + ")"') || ineligible_text="(could not render)"
+            fi
+            {
+              printf 'APPSEC-04 desired-state container reevaluation is NOT green.\n'
+              printf '\nRun: %s\n' "$RUN_URL"
+              printf '\nDesired-state inventory (default branch): %s\n' "$summary_text"
+              printf '\nScanner-eligible targets are evaluated by container-scan@5de3d944.\n'
+              printf 'Scanner-ineligible (in-scope, reported, not failed):\n%s\n' "$ineligible_text"
+              printf '\nGeneric failure signal (policy finding or scanner/DB/registry inability to evaluate). Inspect the run. No automatic remediation occurs.\n'
+            } > "$body_file"
+          fi
           if [ -n "$existing" ]; then
             gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
             gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "Still not green at $RUN_URL"
