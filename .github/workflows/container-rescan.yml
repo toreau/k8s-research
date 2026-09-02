@@ -1,0 +1,217 @@
+# container-rescan
+#
+# Scheduled-style reevaluation of the DESIRED container IMAGE@DIGEST state in
+# this GitOps repo (k8s-research). APPSEC-04.1 ships this workflow
+# dispatch-only; the cron schedule is added in a later slice AFTER the desired
+# baseline is proven green.
+#
+# Scope and invariants:
+#   - Security object = the exact immutable digest currently selected on the
+#     DEFAULT branch (main), read from apps/<app>/meta.yaml + digestFiles.
+#     This is GitOps desired state, NOT "the newest build" and NOT an open
+#     promotion PR. It is not claimed to equal the live cluster.
+#   - Scanner eligibility is capability-based: the accepted central
+#     container-scan mechanism is single-image-manifest-only and authenticates
+#     with the caller token only (no separate registry credential channel).
+#     An app whose desired identity is an OCI image index / Docker manifest
+#     list, or whose package is not readable under that credential model, is
+#     reported as in-scope but scanner-ineligible, never force-scanned.
+#   - Eligible desired artifacts are evaluated with the accepted mechanism:
+#       toreau/gh-workflows/.github/workflows/container-scan.yml
+#       @5de3d9440803452670476182508870b27d030962
+#   - No cluster/ArgoCD/runtime discovery. No rollback, no remediation, no
+#     deletion. No PR creation. No SARIF. No scanner-output CVE parsing.
+#   - Operator signal: ONE durable workflow-level GitHub issue (label
+#     "container-rescan") reflecting the current evaluation state; created or
+#     updated while the evaluation is not fully green, closed when fully green.
+#     A red scan still fails the workflow even though the report job succeeds.
+#   - Evaluation failure (policy or scanner/DB/registry infrastructure) is a
+#     single generic "inspect run" condition; the two are not distinguished.
+name: container-rescan
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: container-rescan
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      targets: ${{ steps.extract.outputs.targets }}
+      has-eligible: ${{ steps.extract.outputs.has-eligible }}
+      ineligible: ${{ steps.extract.outputs.ineligible }}
+      summary: ${{ steps.extract.outputs.summary }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Enumerate desired artifacts and classify scanner eligibility
+        id: extract
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          probe_ct() {
+            local image="$1" digest="$2"
+            local regrepo="${image#ghcr.io/}"
+            case "$image" in ghcr.io/*) ;; *) echo "not-ghcr"; return ;; esac
+            local tok kind="anon"
+            tok=$(curl -fsSL --max-time 20 "https://ghcr.io/token?service=ghcr.io&scope=repository:${regrepo}:pull" \
+              | jq -r '.token // empty' 2>/dev/null || true)
+            if [ -z "$tok" ]; then
+              tok=$(curl -fsSL --max-time 20 -u "$GITHUB_ACTOR:$GITHUB_TOKEN" \
+                "https://ghcr.io/token?service=ghcr.io&scope=repository:${regrepo}:pull" \
+                | jq -r '.token // empty' 2>/dev/null || true)
+              kind="token"
+            fi
+            [ -n "$tok" ] || { echo "no-read"; return; }
+            curl -fsSL --max-time 30 -H "Authorization: Bearer $tok" \
+              -H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+              -D - -o /dev/null "https://ghcr.io/v2/${regrepo}/manifests/${digest}" 2>/dev/null \
+              | grep -i '^content-type:' | tr -d '\r' | sed 's/^[Cc]ontent-[Tt]ype:[[:space:]]*//'
+          }
+
+          targets='[]'
+          ineligible='[]'
+          summary=""
+          for meta in apps/*/meta.yaml; do
+            [ -f "$meta" ] || continue
+            name=$(ruby -ryaml -e "puts YAML.load_file('$meta')['app']['name']")
+            image=$(ruby -ryaml -e "puts YAML.load_file('$meta')['app']['image']")
+            files=$(ruby -ryaml -e "puts YAML.load_file('$meta')['app']['digestFiles'].join(' ')")
+            prefix="image: $image@sha256:"
+            digest=""
+            for f in $files; do
+              [ -f "$f" ] || { echo "::error::$name: missing digest file $f"; exit 1; }
+              line=$(grep "$prefix" "$f" | head -1)
+              [ -n "$line" ] || { echo "::error::$name: no image line ($prefix) in $f"; exit 1; }
+              d="${line##*sha256:}"
+              case "$d" in
+                ""|*[!0-9a-f]*|[!0-9a-f]*) echo "::error::$name: malformed digest in $f"; exit 1 ;;
+              esac
+              [ "${#d}" -eq 64 ] || { echo "::error::$name: malformed digest length in $f"; exit 1; }
+              if [ -z "$digest" ]; then digest="sha256:$d"
+              elif [ "sha256:$d" != "$digest" ]; then
+                echo "::error::$name: image digests differ ($f=$d vs $digest)"; exit 1
+              fi
+            done
+
+            ct=$(probe_ct "$image" "$digest")
+            eligible=false
+            reason=""
+            case "$ct" in
+              application/vnd.oci.image.manifest.v1+json|application/vnd.docker.distribution.manifest.v2+json)
+                eligible=true ;;
+              application/vnd.oci.image.index.v1+json|application/vnd.docker.distribution.manifest.list.v2+json)
+                reason="desired identity is an OCI image index / manifest list; the container-scan mechanism is single-manifest-only" ;;
+              *)
+                reason="desired artifact not readable under the container-scan credential model (no separate registry credential channel); mechanism is single-manifest-only" ;;
+            esac
+
+            entry=$(jq -cn --arg a "$name" --arg i "$image" --arg d "$digest" --argjson e "$eligible" --arg r "$reason" \
+              '{app:$a,image:$i,digest:$d,eligible:$e,reason:$r}')
+            if [ "$eligible" = true ]; then
+              targets=$(echo "$targets" | jq -c --argjson e "$entry" '. + [$e]')
+            else
+              ineligible=$(echo "$ineligible" | jq -c --argjson e "$entry" '. + [$e]')
+            fi
+            if [ -n "$summary" ]; then summary="${summary}; "; fi
+            summary="${summary}$name $image@$digest eligible=$eligible${reason:+ reason=$reason}"
+          done
+          has_eligible=false
+          [ "$(echo "$targets" | jq 'length')" -gt 0 ] && has_eligible=true
+          {
+            echo "targets=$targets"
+            echo "has-eligible=$has_eligible"
+            echo "ineligible=$ineligible"
+            echo "summary=$summary"
+          } >> "$GITHUB_OUTPUT"
+          echo "targets: $targets"
+          echo "ineligible: $ineligible"
+
+  scan:
+    needs: inventory
+    if: ${{ needs.inventory.outputs.has-eligible == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.inventory.outputs.targets) }}
+    permissions:
+      packages: read
+    uses: toreau/gh-workflows/.github/workflows/container-scan.yml@5de3d9440803452670476182508870b27d030962
+    with:
+      image: ${{ matrix.target.image }}
+      digest: ${{ matrix.target.digest }}
+
+  report:
+    needs: [inventory, scan]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Compute evaluation state and maintain durable signal issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INVENTORY_RESULT: ${{ needs.inventory.result }}
+          SCAN_RESULT: ${{ needs.scan.result }}
+          HAS_ELIGIBLE: ${{ needs.inventory.outputs.has-eligible }}
+          SUMMARY: ${{ needs.inventory.outputs.summary }}
+          INELIGIBLE: ${{ needs.inventory.outputs.ineligible }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh label create container-rescan --color B60205 --force >/dev/null 2>&1 || true
+
+          green=false
+          if [ "$INVENTORY_RESULT" = "success" ]; then
+            if [ "$HAS_ELIGIBLE" = "true" ]; then
+              [ "$SCAN_RESULT" = "success" ] && green=true
+            else
+              green=true
+            fi
+          fi
+
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --label container-rescan --state open \
+            --json number --jq '.[0].number // empty')
+
+          if [ "$green" = "true" ]; then
+            echo "evaluation green for all scanner-eligible desired artifacts"
+            if [ -n "$existing" ]; then
+              gh issue close "$existing" --repo "$GITHUB_REPOSITORY" \
+                --comment "Reevaluation green at $RUN_URL"
+            fi
+            exit 0
+          fi
+
+          summary_text="$SUMMARY"
+          ineligible_text=$(echo "$INELIGIBLE" | jq -r '.[] | "- " + .app + " " + .image + "@" + .digest + " (" + .reason + ")"')
+          body_file="$RUNNER_TEMP/issue-body.txt"
+          {
+            printf 'APPSEC-04 desired-state container reevaluation is NOT green.\n'
+            printf '\n'
+            printf 'Run: %s\n' "$RUN_URL"
+            printf '\n'
+            printf 'Desired-state inventory (default branch): %s\n' "$summary_text"
+            printf '\n'
+            printf 'Scanner-eligible targets are evaluated by container-scan@5de3d944.\n'
+            printf 'Scanner-ineligible (in-scope, reported, not failed):\n%s\n' "$ineligible_text"
+            printf '\n'
+            printf 'Generic failure signal (policy finding or scanner/DB/registry inability to evaluate). Inspect the run. No automatic remediation occurs.\n'
+          } > "$body_file"
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "Still not green at $RUN_URL"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label container-rescan \
+              --title "APPSEC-04: desired-state container reevaluation failure" --body-file "$body_file"
+          fi
