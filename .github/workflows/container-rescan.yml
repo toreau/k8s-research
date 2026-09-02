@@ -170,7 +170,12 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          gh label create container-rescan --color B60205 --force >/dev/null 2>&1 || true
+          TITLE="APPSEC-04: desired-state container reevaluation failure"
+
+          label_ok=false
+          if gh label create container-rescan --color B60205 --force >/dev/null 2>&1; then
+            label_ok=true
+          fi
 
           green=false
           if [ "$INVENTORY_RESULT" = "success" ]; then
@@ -181,8 +186,13 @@ jobs:
             fi
           fi
 
-          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --label container-rescan --state open \
-            --json number --jq '.[0].number // empty' || true)
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty' || true)
+          [ -n "$existing" ] || existing=""
+          if [ -z "$existing" ] && [ "$label_ok" = true ]; then
+            existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --label container-rescan --state open \
+              --json number --jq '.[0].number // empty' || true)
+          fi
           [ -n "$existing" ] || existing=""
 
           if [ "$green" = "true" ]; then
@@ -220,6 +230,9 @@ jobs:
             gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
             gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "Still not green at $RUN_URL"
           else
-            gh issue create --repo "$GITHUB_REPOSITORY" --label container-rescan \
-              --title "APPSEC-04: desired-state container reevaluation failure" --body-file "$body_file"
+            create_args=(--repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file "$body_file")
+            if [ "$label_ok" = true ]; then
+              create_args+=(--label container-rescan)
+            fi
+            gh issue create "${create_args[@]}"
           fi
